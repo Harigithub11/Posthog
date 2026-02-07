@@ -1281,6 +1281,18 @@ export const surveyLogic = kea<surveyLogicType>([
                                       delete cleanedTrans.upperBoundLabel
                                   }
 
+                                  // Initialize choices for new single/multiple choice questions
+                                  if (
+                                      (type === SurveyQuestionType.SingleChoice ||
+                                          type === SurveyQuestionType.MultipleChoice) &&
+                                      !cleanedTrans.choices
+                                  ) {
+                                      const defaultChoices =
+                                          (defaultSurveyFieldValues[type].questions[0] as MultipleSurveyQuestion)
+                                              .choices || []
+                                      cleanedTrans.choices = defaultChoices
+                                  }
+
                                   acc[lang] = cleanedTrans
                                   return acc
                               },
@@ -2036,13 +2048,15 @@ export const surveyLogic = kea<surveyLogicType>([
                         ]
                         fieldChecks.forEach(({ key, defaultValue }) => {
                             const value = trans[key]
-                            const defaultIsEmpty =
-                                !defaultValue || typeof defaultValue !== 'string' || defaultValue.trim() === ''
+                            // Only check if default is explicitly empty (not undefined)
+                            const defaultIsExplicitlyEmpty =
+                                defaultValue !== undefined &&
+                                (typeof defaultValue !== 'string' || defaultValue.trim() === '')
                             const translationHasValue =
                                 value !== undefined && typeof value === 'string' && value.trim() !== ''
 
-                            // Track fields with translations but empty defaults
-                            if (defaultIsEmpty && translationHasValue) {
+                            // Track fields with translations but explicitly empty defaults
+                            if (defaultIsExplicitlyEmpty && translationHasValue) {
                                 fieldsWithEmptyDefaults.add(key)
                             }
                         })
@@ -2065,9 +2079,10 @@ export const surveyLogic = kea<surveyLogicType>([
                         },
                     ]
                     fieldChecks.forEach(({ key, defaultValue }) => {
-                        const defaultIsEmpty =
-                            !defaultValue || typeof defaultValue !== 'string' || defaultValue.trim() === ''
-                        if (defaultIsEmpty && fieldsWithEmptyDefaults.has(key)) {
+                        const defaultIsExplicitlyEmpty =
+                            defaultValue !== undefined &&
+                            (typeof defaultValue !== 'string' || defaultValue.trim() === '')
+                        if (defaultIsExplicitlyEmpty && fieldsWithEmptyDefaults.has(key)) {
                             errors.push({
                                 language: 'default',
                                 questionIndex: -1,
@@ -2158,13 +2173,15 @@ export const surveyLogic = kea<surveyLogicType>([
                         ]
                         textFieldChecks.forEach(({ key, defaultValue }) => {
                             const value = trans[key]
-                            const defaultIsEmpty =
-                                !defaultValue || typeof defaultValue !== 'string' || defaultValue.trim() === ''
+                            // Only check if default is explicitly empty (not undefined)
+                            const defaultIsExplicitlyEmpty =
+                                defaultValue !== undefined &&
+                                (typeof defaultValue !== 'string' || defaultValue.trim() === '')
                             const translationHasValue =
                                 value !== undefined && typeof value === 'string' && value.trim() !== ''
 
-                            // Track fields with translations but empty defaults
-                            if (defaultIsEmpty && translationHasValue) {
+                            // Track fields with translations but explicitly empty defaults
+                            if (defaultIsExplicitlyEmpty && translationHasValue) {
                                 fieldsWithEmptyDefaults.add(key)
                             }
                         })
@@ -2180,9 +2197,10 @@ export const surveyLogic = kea<surveyLogicType>([
                             { key: 'upperBoundLabel', defaultValue: question.upperBoundLabel },
                         ]
                         textFieldChecks.forEach(({ key, defaultValue }) => {
-                            const defaultIsEmpty =
-                                !defaultValue || typeof defaultValue !== 'string' || defaultValue.trim() === ''
-                            if (defaultIsEmpty && fieldsWithEmptyDefaults.has(key)) {
+                            const defaultIsExplicitlyEmpty =
+                                defaultValue !== undefined &&
+                                (typeof defaultValue !== 'string' || defaultValue.trim() === '')
+                            if (defaultIsExplicitlyEmpty && fieldsWithEmptyDefaults.has(key)) {
                                 errors.push({
                                     language: 'default',
                                     questionIndex: qIndex,
