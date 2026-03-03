@@ -3,10 +3,7 @@ from typing import TYPE_CHECKING, Optional, cast
 import posthoganalytics
 
 from posthog.exceptions_capture import capture_exception
-from posthog.temporal.data_imports.sources.common.webhook_s3 import (
-    WAREHOUSE_WEBHOOK_FLAG,
-    WebhookSourceManager,
-)
+from posthog.temporal.data_imports.sources.common.webhook_s3 import WAREHOUSE_WEBHOOK_FLAG, WebhookSourceManager
 
 if TYPE_CHECKING:
     from posthog.cdp.templates.hog_function_template import HogFunctionTemplateDC
@@ -22,21 +19,16 @@ from posthog.schema import (
     SuggestedTable,
 )
 
-from posthog.temporal.data_imports.pipelines.pipeline.typings import (
-    SourceInputs,
-    SourceResponse,
-)
-from posthog.temporal.data_imports.sources.common.mixins import OAuthMixin
+from posthog.temporal.data_imports.pipelines.pipeline.typings import SourceInputs, SourceResponse
 from posthog.temporal.data_imports.sources.common.base import (
     FieldType,
     ResumableSource,
     WebhookCreationResult,
     WebhookSource,
 )
+from posthog.temporal.data_imports.sources.common.mixins import OAuthMixin
 from posthog.temporal.data_imports.sources.common.registry import SourceRegistry
-from posthog.temporal.data_imports.sources.common.resumable import (
-    ResumableSourceManager,
-)
+from posthog.temporal.data_imports.sources.common.resumable import ResumableSourceManager
 from posthog.temporal.data_imports.sources.common.schema import SourceSchema
 from posthog.temporal.data_imports.sources.generated_configs import StripeSourceConfig
 from posthog.temporal.data_imports.sources.stripe.constants import (
@@ -126,9 +118,7 @@ class StripeSource(
 
     @property
     def webhook_template(self) -> Optional["HogFunctionTemplateDC"]:
-        from posthog.temporal.data_imports.sources.stripe.webhook_template import (
-            template,
-        )
+        from posthog.temporal.data_imports.sources.stripe.webhook_template import template
 
         return template
 
@@ -140,7 +130,13 @@ class StripeSource(
     def get_source_config(self) -> SourceConfig:
         return SourceConfig(
             name=SchemaExternalDataSourceType.STRIPE,
-            caption="Connect your Stripe account to automatically sync your Stripe data into PostHog.",
+            caption="Connect your Stripe account to automatically sync your Stripe data into PostHog. You can choose between OAuth (recommended) or legacy RAK Stripe keys. If you choose the latter, you will need your [Stripe account ID]({STRIPE_ACCOUNT_URL}), and create a [restricted API key]({STRIPE_API_KEYS_URL})",
+            permissionsCaption="""Currently, **read permissions are required** for the following resources:
+            - Under the **Core** resource type, select *read* for **Balance transaction sources**, **Charges**, **Customers**, **Disputes**, **Payouts**, and **Products**
+            - Under the **Billing** resource type, select *read* for **Credit notes**, **Invoices**, **Prices**, and **Subscriptions**
+            - Under the **Connect** resource type, select *read* for the **entire resource**
+            These permissions are automatically pre-filled in the API key creation form if you use the link above, so all you need to do is scroll down and click "Create Key".
+            """,
             iconPath="/static/services/stripe.png",
             docsUrl="https://posthog.com/docs/cdp/sources/stripe",
             fields=cast(
@@ -170,7 +166,6 @@ class StripeSource(
                             SourceFieldSelectConfigOption(
                                 label="Restricted API key",
                                 value="api_key",
-                                deprecated=True,
                                 fields=cast(
                                     list[FieldType],
                                     [
@@ -258,10 +253,8 @@ Once created, copy the **Signing secret** from the webhook details page and add 
 
         if not config.auth_method.stripe_integration_id:
             raise ValueError("Missing Stripe integration ID")
-        integration = self.get_oauth_integration(
-            config.auth_method.stripe_integration_id, team_id
-        )
 
+        integration = self.get_oauth_integration(config.auth_method.stripe_integration_id, team_id)
         if not integration.access_token:
             raise ValueError("Stripe access token not found")
         return integration.access_token
@@ -277,19 +270,12 @@ Once created, copy the **Signing secret** from the webhook details page and add 
             SourceSchema(
                 name=endpoint,
                 supports_incremental=_is_webhook_feature_flag_enabled(team_id)
-                and STRIPE_APPEND_ONLY_INCREMENTAL_FIELDS.get(endpoint, None)
-                is not None,
+                and STRIPE_APPEND_ONLY_INCREMENTAL_FIELDS.get(endpoint, None) is not None,
                 supports_webhooks=_is_webhook_feature_flag_enabled(team_id)
-                and STRIPE_APPEND_ONLY_INCREMENTAL_FIELDS.get(endpoint, None)
-                is not None,
+                and STRIPE_APPEND_ONLY_INCREMENTAL_FIELDS.get(endpoint, None) is not None,
                 # nested resources are only full refresh and are not in STRIPE_APPEND_ONLY_INCREMENTAL_FIELDS
-                supports_append=STRIPE_APPEND_ONLY_INCREMENTAL_FIELDS.get(
-                    endpoint, None
-                )
-                is not None,
-                incremental_fields=STRIPE_APPEND_ONLY_INCREMENTAL_FIELDS.get(
-                    endpoint, []
-                ),
+                supports_append=STRIPE_APPEND_ONLY_INCREMENTAL_FIELDS.get(endpoint, None) is not None,
+                incremental_fields=STRIPE_APPEND_ONLY_INCREMENTAL_FIELDS.get(endpoint, []),
             )
             for endpoint in STRIPE_ENDPOINTS
         ]
@@ -316,17 +302,13 @@ Once created, copy the **Signing secret** from the webhook details page and add 
         except Exception as e:
             return False, str(e)
 
-    def get_resumable_source_manager(
-        self, inputs: SourceInputs
-    ) -> ResumableSourceManager[StripeResumeConfig]:
+    def get_resumable_source_manager(self, inputs: SourceInputs) -> ResumableSourceManager[StripeResumeConfig]:
         return ResumableSourceManager[StripeResumeConfig](inputs, StripeResumeConfig)
 
     def get_webhook_source_manager(self, inputs: SourceInputs) -> WebhookSourceManager:
         return WebhookSourceManager(inputs, inputs.logger)
 
-    def create_webhook(
-        self, config: StripeSourceConfig, webhook_url: str, team_id: int
-    ) -> WebhookCreationResult:
+    def create_webhook(self, config: StripeSourceConfig, webhook_url: str, team_id: int) -> WebhookCreationResult:
         return create_webhook(config, webhook_url)
 
     def source_for_pipeline(
