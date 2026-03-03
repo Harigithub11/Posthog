@@ -21121,10 +21121,24 @@ class SourceConfig(BaseModel):
     webhookSetupCaption: str | None = None
 
 
-class Option(BaseModel):
+class SourceFieldSelectConfig(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    converter: SourceFieldSelectConfigConverter | None = None
+    defaultValue: str
+    label: str
+    name: str
+    options: list[SourceFieldSelectConfigOption]
+    required: bool
+    type: Literal["select"] = "select"
+
+
+class SourceFieldSelectConfigOption(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    deprecated: bool | None = None
     fields: (
         list[
             SourceFieldInputConfig
@@ -21138,19 +21152,6 @@ class Option(BaseModel):
     ) = None
     label: str
     value: str
-
-
-class SourceFieldSelectConfig(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-    converter: SourceFieldSelectConfigConverter | None = None
-    defaultValue: str
-    label: str
-    name: str
-    options: list[Option]
-    required: bool
-    type: Literal["select"] = "select"
 
 
 class SourceFieldSwitchGroupConfig(BaseModel):
@@ -21272,3 +21273,4 @@ MaxDashboardContext.model_rebuild()
 MaxInsightContext.model_rebuild()
 QueryRequest.model_rebuild()
 SourceConfig.model_rebuild()
+SourceFieldSelectConfig.model_rebuild()

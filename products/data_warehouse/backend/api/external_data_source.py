@@ -273,6 +273,7 @@ class ExternalDataSourceSerializers(UserAccessControlSerializerMixin, serializer
         job_inputs_allowed_keys = {
             # stripe
             "stripe_account_id",
+            "stripe_integration_id",
             # sql
             "database",
             "host",
