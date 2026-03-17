@@ -203,11 +203,8 @@ class EndpointVersion(models.Model):
         MATERIALIZABLE_QUERY_TYPES = {
             "HogQLQuery",
             "TrendsQuery",
-            "FunnelsQuery",
             "LifecycleQuery",
             "RetentionQuery",
-            "PathsQuery",
-            "StickinessQuery",
         }
 
         if query_kind not in MATERIALIZABLE_QUERY_TYPES:
