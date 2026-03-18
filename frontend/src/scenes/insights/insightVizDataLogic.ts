@@ -69,6 +69,7 @@ import {
     getShowPercentStackView,
     getShowValuesOnSeries,
     getYAxisScaleType,
+    getYAxisStartAtMin,
     isActionsNode,
     isAnyDataWarehouseNode,
     isDataWarehouseNode,
@@ -266,6 +267,7 @@ export const insightVizDataLogic = kea<insightVizDataLogicType>([
         showPercentStackView: [(s) => [s.querySource], (q) => (q ? getShowPercentStackView(q) : null)],
         yAxisScaleType: [(s) => [s.querySource], (q) => (q ? getYAxisScaleType(q) : null)],
         showMultipleYAxes: [(s) => [s.querySource], (q) => (q ? getShowMultipleYAxes(q) : null)],
+        yAxisStartAtMin: [(s) => [s.querySource], (q) => (q ? getYAxisStartAtMin(q) : null)],
         resultCustomizationBy: [(s) => [s.querySource], (q) => (q ? getResultCustomizationBy(q) : null)],
         aggregationGroupTypeIndex: [(s) => [s.querySource], (q) => (q ? getAggregationGroupTypeIndex(q) : null)],
         labelGroupType: [

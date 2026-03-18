@@ -33646,6 +33646,9 @@
                 "yAxisScaleType": {
                     "enum": ["log10", "linear"],
                     "type": "string"
+                },
+                "yAxisStartAtMin": {
+                    "type": ["boolean", "null"]
                 }
             },
             "type": "object"

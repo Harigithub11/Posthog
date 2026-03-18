@@ -7227,6 +7227,7 @@ class TrendsFilter(BaseModel):
     showValuesOnSeries: bool | None = False
     smoothingIntervals: int | None = 1
     yAxisScaleType: YAxisScaleType | None = YAxisScaleType.LINEAR
+    yAxisStartAtMin: bool | None = None
 
 
 class TrendsQueryResponse(BaseModel):
