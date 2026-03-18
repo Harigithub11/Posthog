@@ -1,3 +1,4 @@
+import { getDefaultMetricsIngestionConsumerConfig } from '~/metrics-ingestion/config'
 import { getDefaultCdpConfig } from '../cdp/config'
 import { getDefaultCommonConfig } from '../common/config'
 import { getDefaultIngestionConsumerConfig } from '../ingestion/config'
@@ -17,6 +18,7 @@ export function getDefaultConfig(): PluginsServerConfig {
         ...getDefaultCdpConfig(),
         ...getDefaultIngestionConsumerConfig(),
         ...getDefaultLogsIngestionConsumerConfig(),
+        ...getDefaultMetricsIngestionConsumerConfig(),
         ...getDefaultSessionRecordingConfig(),
         ...getDefaultSessionRecordingApiConfig(),
     }

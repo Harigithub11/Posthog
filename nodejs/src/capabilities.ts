@@ -55,6 +55,11 @@ export const CAPABILITIES_LOGS: PluginServerCapabilities = {
     logsIngestion: true,
 }
 
+/** Metrics - metric ingestion */
+export const CAPABILITIES_METRICS: PluginServerCapabilities = {
+    metricsIngestion: true,
+}
+
 /** Feature Flags - evaluation scheduler for flags and experiments */
 export const CAPABILITIES_FEATURE_FLAGS: PluginServerCapabilities = {
     evaluationScheduler: true,
@@ -85,6 +90,7 @@ const CAPABILITY_GROUP_MAP: Record<string, PluginServerCapabilities> = {
     session_replay: CAPABILITIES_SESSION_REPLAY,
     recording_api: CAPABILITIES_RECORDING_API,
     logs: CAPABILITIES_LOGS,
+    metrics: CAPABILITIES_METRICS,
     feature_flags: CAPABILITIES_FEATURE_FLAGS,
 }
 
@@ -134,6 +140,7 @@ export function getPluginServerCapabilities(
                 { sessionRecordingBlobIngestionV2Overflow: config.SESSION_RECORDING_OVERFLOW_ENABLED },
                 CAPABILITIES_RECORDING_API,
                 CAPABILITIES_LOGS,
+                CAPABILITIES_METRICS,
                 CAPABILITIES_FEATURE_FLAGS
             )
 
@@ -205,6 +212,10 @@ export function getPluginServerCapabilities(
         case PluginServerMode.ingestion_logs:
             return {
                 logsIngestion: true,
+            }
+        case PluginServerMode.ingestion_metrics:
+            return {
+                metricsIngestion: true,
             }
         case PluginServerMode.cdp_batch_hogflow_requests:
             return {
