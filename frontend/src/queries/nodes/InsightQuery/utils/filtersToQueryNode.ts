@@ -34,6 +34,7 @@ import {
     LifecycleDataWarehouseNode,
     MathType,
     NodeKind,
+    SystemTableNode,
     PathsFilter,
     RetentionFilter,
     StickinessFilter,
@@ -122,33 +123,49 @@ export const legacyEntityToNode = (
     dataWarehouseNodeKind: DataWarehouseNodeKind = NodeKind.DataWarehouseNode
 ): AnyEntityNode<AnyDataWarehouseNode> | GroupNode<AnyDataWarehouseNode> => {
     let shared: Partial<
-        EventsNode | ActionsNode | DataWarehouseNode | FunnelsDataWarehouseNode | LifecycleDataWarehouseNode | GroupNode
+        | EventsNode
+        | ActionsNode
+        | DataWarehouseNode
+        | FunnelsDataWarehouseNode
+        | LifecycleDataWarehouseNode
+        | SystemTableNode
+        | GroupNode
     > = {
         name: entity.name || undefined,
         custom_name: entity.custom_name || undefined,
     }
 
     if (isDataWarehouseFilter(entity)) {
-        shared = {
-            ...shared,
-            timestamp_field: entity.timestamp_field || undefined,
-            table_name: entity.table_name || undefined,
-            ...(dataWarehouseNodeKind === NodeKind.LifecycleDataWarehouseNode
-                ? {
-                      aggregation_target_field: (entity as LifecycleDatawarehouseFilter).aggregation_target_field,
-                      created_at_field: (entity as LifecycleDatawarehouseFilter).created_at_field,
-                  }
-                : dataWarehouseNodeKind === NodeKind.FunnelsDataWarehouseNode
-                  ? {
-                        id_field: (entity as FunnelDatawarehouseFilter).id_field || undefined,
-                        aggregation_target_field:
-                            (entity as FunnelDatawarehouseFilter).aggregation_target_field || undefined,
-                    }
-                  : {
-                        id_field: (entity as TrendsDataWarehouseFilter).id_field || undefined,
-                        distinct_id_field: (entity as TrendsDataWarehouseFilter).distinct_id_field || undefined,
-                    }),
-        } as DataWarehouseNode | FunnelsDataWarehouseNode | LifecycleDataWarehouseNode
+        const isSystemTable = entity.table_name?.startsWith('system.')
+        if (isSystemTable) {
+            shared = {
+                ...shared,
+                id_field: (entity as TrendsDataWarehouseFilter).id_field || undefined,
+                timestamp_field: entity.timestamp_field || undefined,
+                table_name: entity.table_name || undefined,
+            } as SystemTableNode
+        } else {
+            shared = {
+                ...shared,
+                timestamp_field: entity.timestamp_field || undefined,
+                table_name: entity.table_name || undefined,
+                ...(dataWarehouseNodeKind === NodeKind.LifecycleDataWarehouseNode
+                    ? {
+                          aggregation_target_field: (entity as LifecycleDatawarehouseFilter).aggregation_target_field,
+                          created_at_field: (entity as LifecycleDatawarehouseFilter).created_at_field,
+                      }
+                    : dataWarehouseNodeKind === NodeKind.FunnelsDataWarehouseNode
+                      ? {
+                            id_field: (entity as FunnelDatawarehouseFilter).id_field || undefined,
+                            aggregation_target_field:
+                                (entity as FunnelDatawarehouseFilter).aggregation_target_field || undefined,
+                        }
+                      : {
+                            id_field: (entity as TrendsDataWarehouseFilter).id_field || undefined,
+                            distinct_id_field: (entity as TrendsDataWarehouseFilter).distinct_id_field || undefined,
+                        }),
+            } as DataWarehouseNode | FunnelsDataWarehouseNode | LifecycleDataWarehouseNode
+        }
     }
 
     if (isGroupFilter(entity)) {
@@ -219,9 +236,10 @@ export const legacyEntityToNode = (
             })
         ) as any
     } else if (entity.type === 'data_warehouse') {
+        const isSystemTable = isDataWarehouseFilter(entity) && entity.table_name?.startsWith('system.')
         return setLatestVersionsOnQuery(
             objectCleanWithEmpty({
-                kind: dataWarehouseNodeKind,
+                kind: isSystemTable ? NodeKind.SystemTableNode : dataWarehouseNodeKind,
                 id: entity.id,
                 ...shared,
             })
@@ -648,9 +666,11 @@ export const compareFilterToQuery = (filters: Record<string, any>): CompareFilte
 
 /** Expand GroupNodes into individual EventsNode/ActionsNode for insight types that don't support GroupNode */
 export const expandGroupNodes = (
-    series: (EventsNode | ActionsNode | DataWarehouseNode | GroupNode)[]
-): (EventsNode | ActionsNode | DataWarehouseNode)[] => {
+    series: (EventsNode | ActionsNode | DataWarehouseNode | SystemTableNode | GroupNode)[]
+): (EventsNode | ActionsNode | DataWarehouseNode | SystemTableNode)[] => {
     return series.flatMap((item) =>
-        item.kind === NodeKind.GroupNode ? (item.nodes as (EventsNode | ActionsNode | DataWarehouseNode)[]) : [item]
+        item.kind === NodeKind.GroupNode
+            ? (item.nodes as (EventsNode | ActionsNode | DataWarehouseNode | SystemTableNode)[])
+            : [item]
     )
 }

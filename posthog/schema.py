@@ -1027,7 +1027,7 @@ class DataWarehouseEventsModifier(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    distinct_id_field: str
+    distinct_id_field: str | None = None
     id_field: str
     table_name: str
     timestamp_field: str
@@ -3020,6 +3020,7 @@ class NodeKind(StrEnum):
     GROUP_NODE = "GroupNode"
     ACTIONS_NODE = "ActionsNode"
     DATA_WAREHOUSE_NODE = "DataWarehouseNode"
+    SYSTEM_TABLE_NODE = "SystemTableNode"
     FUNNELS_DATA_WAREHOUSE_NODE = "FunnelsDataWarehouseNode"
     LIFECYCLE_DATA_WAREHOUSE_NODE = "LifecycleDataWarehouseNode"
     EVENTS_QUERY = "EventsQuery"
@@ -4235,6 +4236,7 @@ class TaxonomicFilterGroupType(StrEnum):
     MAX_AI_CONTEXT = "max_ai_context"
     WORKFLOW_VARIABLES = "workflow_variables"
     SUGGESTED_FILTERS = "suggested_filters"
+    SYSTEM_TABLES = "system_tables"
     EMPTY = "empty"
 
 
@@ -15178,6 +15180,88 @@ class SurveyCreationSchema(BaseModel):
     type: SurveyType
 
 
+class SystemTableNode(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    custom_name: str | None = None
+    fixedProperties: (
+        list[
+            EventPropertyFilter
+            | PersonPropertyFilter
+            | ElementPropertyFilter
+            | EventMetadataPropertyFilter
+            | SessionPropertyFilter
+            | CohortPropertyFilter
+            | RecordingPropertyFilter
+            | LogEntryPropertyFilter
+            | GroupPropertyFilter
+            | FeaturePropertyFilter
+            | FlagPropertyFilter
+            | HogQLPropertyFilter
+            | EmptyPropertyFilter
+            | DataWarehousePropertyFilter
+            | DataWarehousePersonPropertyFilter
+            | ErrorTrackingIssueFilter
+            | LogPropertyFilter
+            | RevenueAnalyticsPropertyFilter
+        ]
+        | None
+    ) = Field(
+        default=None,
+        description=("Fixed properties in the query, can't be edited in the interface (e.g. scoping down by person)"),
+    )
+    id: str
+    id_field: str
+    kind: Literal["SystemTableNode"] = "SystemTableNode"
+    math: (
+        BaseMathType
+        | FunnelMathType
+        | PropertyMathType
+        | CountPerActorMathType
+        | ExperimentMetricMathType
+        | CalendarHeatmapMathType
+        | Literal["unique_group"]
+        | Literal["hogql"]
+        | None
+    ) = None
+    math_group_type_index: MathGroupTypeIndex | None = None
+    math_hogql: str | None = None
+    math_multiplier: float | None = None
+    math_property: str | None = None
+    math_property_revenue_currency: RevenueCurrencyPropertyConfig | None = None
+    math_property_type: str | None = None
+    name: str | None = None
+    optionalInFunnel: bool | None = None
+    properties: (
+        list[
+            EventPropertyFilter
+            | PersonPropertyFilter
+            | ElementPropertyFilter
+            | EventMetadataPropertyFilter
+            | SessionPropertyFilter
+            | CohortPropertyFilter
+            | RecordingPropertyFilter
+            | LogEntryPropertyFilter
+            | GroupPropertyFilter
+            | FeaturePropertyFilter
+            | FlagPropertyFilter
+            | HogQLPropertyFilter
+            | EmptyPropertyFilter
+            | DataWarehousePropertyFilter
+            | DataWarehousePersonPropertyFilter
+            | ErrorTrackingIssueFilter
+            | LogPropertyFilter
+            | RevenueAnalyticsPropertyFilter
+        ]
+        | None
+    ) = Field(default=None, description="Properties configurable in the interface")
+    response: dict[str, Any] | None = None
+    table_name: str
+    timestamp_field: str
+    version: float | None = Field(default=None, description="version of the node, used for schema migrations")
+
+
 class TeamTaxonomyQueryResponse(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -15823,16 +15907,20 @@ class AnyDataWarehouseNode(RootModel[DataWarehouseNode | FunnelsDataWarehouseNod
     root: DataWarehouseNode | FunnelsDataWarehouseNode | LifecycleDataWarehouseNode
 
 
-class AnyEntityNodeDataWarehouseNode(RootModel[EventsNode | ActionsNode | DataWarehouseNode]):
-    root: EventsNode | ActionsNode | DataWarehouseNode
+class AnyEntityNodeDataWarehouseNode(RootModel[EventsNode | ActionsNode | DataWarehouseNode | SystemTableNode]):
+    root: EventsNode | ActionsNode | DataWarehouseNode | SystemTableNode
 
 
-class AnyEntityNodeFunnelsDataWarehouseNode(RootModel[EventsNode | ActionsNode | FunnelsDataWarehouseNode]):
-    root: EventsNode | ActionsNode | FunnelsDataWarehouseNode
+class AnyEntityNodeFunnelsDataWarehouseNode(
+    RootModel[EventsNode | ActionsNode | FunnelsDataWarehouseNode | SystemTableNode]
+):
+    root: EventsNode | ActionsNode | FunnelsDataWarehouseNode | SystemTableNode
 
 
-class AnyEntityNodeLifecycleDataWarehouseNode(RootModel[EventsNode | ActionsNode | LifecycleDataWarehouseNode]):
-    root: EventsNode | ActionsNode | LifecycleDataWarehouseNode
+class AnyEntityNodeLifecycleDataWarehouseNode(
+    RootModel[EventsNode | ActionsNode | LifecycleDataWarehouseNode | SystemTableNode]
+):
+    root: EventsNode | ActionsNode | LifecycleDataWarehouseNode | SystemTableNode
 
 
 class AnyResponseType(
@@ -17085,7 +17173,9 @@ class StickinessQuery(BaseModel):
     ) = Field(default=[], description="Property filters for all series")
     response: StickinessQueryResponse | None = None
     samplingFactor: float | None = Field(default=None, description="Sampling rate")
-    series: list[EventsNode | ActionsNode | DataWarehouseNode] = Field(..., description="Events and actions to include")
+    series: list[EventsNode | ActionsNode | DataWarehouseNode | SystemTableNode] = Field(
+        ..., description="Events and actions to include"
+    )
     stickinessFilter: StickinessFilter | None = Field(
         default=None, description="Properties specific to the stickiness insight"
     )
@@ -17288,7 +17378,9 @@ class CalendarHeatmapQuery(BaseModel):
     ) = Field(default=[], description="Property filters for all series")
     response: CalendarHeatmapResponse | None = None
     samplingFactor: float | None = Field(default=None, description="Sampling rate")
-    series: list[EventsNode | ActionsNode | DataWarehouseNode] = Field(..., description="Events and actions to include")
+    series: list[EventsNode | ActionsNode | DataWarehouseNode | SystemTableNode] = Field(
+        ..., description="Events and actions to include"
+    )
     tags: QueryLogTags | None = Field(default=None, description="Tags that will be added to the Query log comment")
     version: float | None = Field(default=None, description="version of the node, used for schema migrations")
 
@@ -17645,7 +17737,7 @@ class GroupNode(BaseModel):
     math_property_revenue_currency: RevenueCurrencyPropertyConfig | None = None
     math_property_type: str | None = None
     name: str | None = None
-    nodes: list[EventsNode | ActionsNode | DataWarehouseNode] = Field(
+    nodes: list[EventsNode | ActionsNode | DataWarehouseNode | SystemTableNode] = Field(
         ..., description="Entities to combine in this group"
     )
     operator: FilterLogicalOperator = Field(..., description="Group of entities combined with AND/OR operator")
@@ -18005,7 +18097,7 @@ class LifecycleQuery(BaseModel):
     ) = Field(default=[], description="Property filters for all series")
     response: LifecycleQueryResponse | None = None
     samplingFactor: float | None = Field(default=None, description="Sampling rate")
-    series: list[EventsNode | ActionsNode | LifecycleDataWarehouseNode] = Field(
+    series: list[EventsNode | ActionsNode | LifecycleDataWarehouseNode | SystemTableNode] = Field(
         ..., description="Events and actions to include"
     )
     tags: QueryLogTags | None = Field(default=None, description="Tags that will be added to the Query log comment")
@@ -18286,7 +18378,7 @@ class TrendsQuery(BaseModel):
     ) = Field(default=[], description="Property filters for all series")
     response: TrendsQueryResponse | None = None
     samplingFactor: float | None = Field(default=None, description="Sampling rate")
-    series: list[GroupNode | EventsNode | ActionsNode | DataWarehouseNode] = Field(
+    series: list[GroupNode | EventsNode | ActionsNode | DataWarehouseNode | SystemTableNode] = Field(
         ..., description="Events and actions to include"
     )
     tags: QueryLogTags | None = Field(default=None, description="Tags that will be added to the Query log comment")
@@ -18536,7 +18628,7 @@ class FunnelsQuery(BaseModel):
     ) = Field(default=[], description="Property filters for all series")
     response: FunnelsQueryResponse | None = None
     samplingFactor: float | None = Field(default=None, description="Sampling rate")
-    series: list[GroupNode | EventsNode | ActionsNode | FunnelsDataWarehouseNode] = Field(
+    series: list[GroupNode | EventsNode | ActionsNode | FunnelsDataWarehouseNode | SystemTableNode] = Field(
         ..., description="Events and actions to include"
     )
     tags: QueryLogTags | None = Field(default=None, description="Tags that will be added to the Query log comment")
@@ -19277,7 +19369,7 @@ class FunnelCorrelationActorsQuery(BaseModel):
         extra="forbid",
     )
     funnelCorrelationPersonConverted: bool | None = None
-    funnelCorrelationPersonEntity: EventsNode | ActionsNode | DataWarehouseNode | None = None
+    funnelCorrelationPersonEntity: EventsNode | ActionsNode | DataWarehouseNode | SystemTableNode | None = None
     funnelCorrelationPropertyValues: (
         list[
             EventPropertyFilter

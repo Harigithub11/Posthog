@@ -14,6 +14,7 @@ from posthog.schema import (
     FunnelsDataWarehouseNode,
     GroupNode,
     LifecycleDataWarehouseNode,
+    SystemTableNode,
 )
 
 from posthog.hogql import ast
@@ -161,7 +162,13 @@ def get_earliest_timestamp_from_series(
     team: Team,
     series: list[
         Union[
-            EventsNode, ActionsNode, DataWarehouseNode, FunnelsDataWarehouseNode, LifecycleDataWarehouseNode, GroupNode
+            EventsNode,
+            ActionsNode,
+            DataWarehouseNode,
+            FunnelsDataWarehouseNode,
+            LifecycleDataWarehouseNode,
+            SystemTableNode,
+            GroupNode,
         ]
     ],
 ) -> datetime:
@@ -180,8 +187,8 @@ def get_earliest_timestamp_from_series(
     ] = []
     for node in series:
         if isinstance(node, GroupNode):
-            nodes.extend(node.nodes)
-        else:
+            nodes.extend(n for n in node.nodes if not isinstance(n, SystemTableNode))
+        elif not isinstance(node, SystemTableNode):
             nodes.append(node)
 
     timestamps = []

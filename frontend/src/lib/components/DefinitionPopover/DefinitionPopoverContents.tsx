@@ -11,6 +11,7 @@ import { DefinitionPopover } from 'lib/components/DefinitionPopover/DefinitionPo
 import { DefinitionPopoverState, definitionPopoverLogic } from 'lib/components/DefinitionPopover/definitionPopoverLogic'
 import { ObjectTags } from 'lib/components/ObjectTags/ObjectTags'
 import { PropertyKeyInfo } from 'lib/components/PropertyKeyInfo'
+import { getSystemTableDefaults } from 'lib/components/TaxonomicFilter/systemTableDefaults'
 import {
     DataWarehousePopoverField,
     DefinitionPopoverRenderer,
@@ -133,12 +134,19 @@ function DefinitionView({ group }: { group: TaxonomicFilterGroup }): JSX.Element
     const { selectedItemMeta, dataWarehousePopoverFields } = useValues(taxonomicFilterLogic)
     const { selectItem } = useActions(taxonomicFilterLogic)
 
-    // Pre-populate field mappings from the insight filter.
-    // Only apply to data warehouse - for events/properties, selectedItemMeta.id is the
+    // Pre-populate field mappings from the insight filter or system table defaults.
+    // Only apply to data warehouse / system tables - for events/properties, selectedItemMeta.id is the
     // event name which would incorrectly overwrite the event definition's UUID.
     useEffect(() => {
-        if (isDataWarehouse && selectedItemMeta && definition.name === selectedItemMeta.id) {
-            setLocalDefinition(selectedItemMeta)
+        if (isDataWarehouse) {
+            if (selectedItemMeta && definition.name === selectedItemMeta.id) {
+                setLocalDefinition(selectedItemMeta)
+            } else if (definition.name) {
+                const systemDefaults = getSystemTableDefaults(definition.name as string)
+                if (systemDefaults) {
+                    setLocalDefinition(systemDefaults)
+                }
+            }
         }
     }, [definition, isDataWarehouse]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -466,6 +474,10 @@ function DefinitionView({ group }: { group: TaxonomicFilterGroup }): JSX.Element
     }
     if (isDataWarehouse && dataWarehousePopoverFields.length > 0) {
         const _definition = definition as DataWarehouseTableForInsight
+        const isSystemTable = _definition.name?.startsWith('system.')
+        const visiblePopoverFields = isSystemTable
+            ? dataWarehousePopoverFields.filter((f: DataWarehousePopoverField) => f.key !== 'distinct_id_field')
+            : dataWarehousePopoverFields
         const columnOptions = Object.values(_definition.fields).map((column) => ({
             label: column.name + ' (' + column.type + ')',
             value: column.name,
@@ -486,7 +498,7 @@ function DefinitionView({ group }: { group: TaxonomicFilterGroup }): JSX.Element
             <form className="definition-popover-data-warehouse-schema-form">
                 <div className="flex flex-col justify-between gap-4">
                     <DefinitionPopover.Section>
-                        {dataWarehousePopoverFields.map(
+                        {visiblePopoverFields.map(
                             ({
                                 key,
                                 label,
@@ -550,7 +562,7 @@ function DefinitionView({ group }: { group: TaxonomicFilterGroup }): JSX.Element
                                 selectItem(group, itemValue ?? null, localDefinition)
                             }}
                             disabledReason={
-                                dataWarehousePopoverFields.every(
+                                visiblePopoverFields.every(
                                     ({ key, optional }: DataWarehousePopoverField) =>
                                         optional || (isKeyOf(key, localDefinition) && localDefinition[key])
                                 )

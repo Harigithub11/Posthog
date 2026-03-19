@@ -1169,13 +1169,13 @@ class Database(BaseModel):
                         )
 
             # TODO: Need to decide how the distinct_id and person_id fields are going to be handled
-            if "distinct_id" not in table.fields.keys():
+            if "distinct_id" not in table.fields.keys() and warehouse_modifier.distinct_id_field:
                 table.fields["distinct_id"] = ExpressionField(
                     name="distinct_id",
                     expr=parse_expr(warehouse_modifier.distinct_id_field),
                 )
 
-            if "person_id" not in table.fields.keys():
+            if "person_id" not in table.fields.keys() and warehouse_modifier.distinct_id_field:
                 events_join = (
                     DataWarehouseJoin.objects.filter(
                         team_id=team.pk,
@@ -1200,9 +1200,49 @@ class Database(BaseModel):
                 for warehouse_modifier in modifiers.dataWarehouseEventsModifiers:
                     with timings.measure(f"data_warehouse_event_modifier_{warehouse_modifier.table_name}"):
                         # TODO: add all field mappings
+                        is_system_table = warehouse_modifier.table_name.startswith("system.")
                         is_view = views.has_child([warehouse_modifier.table_name])
 
-                        if is_view:
+                        if is_system_table:
+                            # System tables have statically defined fields (no Django model lookup needed).
+                            # Create standard aliases so the table works in trends like any DataWarehouseNode.
+                            # We copy the table to avoid mutating the shared singleton.
+                            table_chain = warehouse_modifier.table_name.split(".")
+                            if database.has_table(table_chain):
+                                original = database.get_table(table_chain)
+                                sys_table = original.model_copy()
+                                sys_table.fields = dict(original.fields)
+
+                                # Add id alias if needed
+                                if warehouse_modifier.id_field not in ("id",):
+                                    sys_table.fields["id"] = ExpressionField(
+                                        name="id",
+                                        expr=parse_expr(warehouse_modifier.id_field),
+                                    )
+
+                                # Add timestamp alias — avoid self-referencing ExpressionField
+                                if warehouse_modifier.timestamp_field == "timestamp":
+                                    if "timestamp" not in sys_table.fields:
+                                        sys_table.fields["timestamp"] = DateTimeDatabaseField(name="timestamp")
+                                else:
+                                    sys_table.fields["timestamp"] = ExpressionField(
+                                        name="timestamp",
+                                        expr=ast.Field(chain=[warehouse_modifier.timestamp_field]),
+                                    )
+
+                                if warehouse_modifier.distinct_id_field:
+                                    sys_table.fields["distinct_id"] = ExpressionField(
+                                        name="distinct_id",
+                                        expr=parse_expr(warehouse_modifier.distinct_id_field),
+                                    )
+                                    sys_table.fields["person_id"] = ExpressionField(
+                                        name="person_id",
+                                        expr=parse_expr(warehouse_modifier.distinct_id_field),
+                                    )
+
+                                # Register the per-request copy back onto the database
+                                database.get_table_node(table_chain).table = sys_table
+                        elif is_view:
                             views = define_mappings(
                                 views,
                                 lambda team, warehouse_modifier: DataWarehouseSavedQuery.objects.exclude(deleted=True)

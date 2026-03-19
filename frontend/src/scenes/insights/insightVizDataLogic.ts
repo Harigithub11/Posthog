@@ -74,6 +74,7 @@ import {
     isAnyDataWarehouseNode,
     isDataWarehouseNode,
     isEventsNode,
+    isSystemTableNode,
     isFunnelsQuery,
     isInsightQueryNode,
     isInsightVizNode,
@@ -382,12 +383,18 @@ export const insightVizDataLogic = kea<insightVizDataLogicType>([
 
         hasDataWarehouseSeries: [
             (s) => [s.series],
-            (series): boolean => (series || []).length > 0 && !!series?.some((node) => isAnyDataWarehouseNode(node)),
+            (series): boolean =>
+                (series || []).length > 0 &&
+                !!series?.some((node) => isAnyDataWarehouseNode(node) || isSystemTableNode(node)),
         ],
         hasOnlyDataWarehouseSeries: [
             (s) => [s.series],
             (series): boolean => {
-                return !!series && series.length > 0 && series.every((node) => isAnyDataWarehouseNode(node))
+                return (
+                    !!series &&
+                    series.length > 0 &&
+                    series.every((node) => isAnyDataWarehouseNode(node) || isSystemTableNode(node))
+                )
             },
         ],
 
@@ -412,7 +419,9 @@ export const insightVizDataLogic = kea<insightVizDataLogicType>([
                     return []
                 }
 
-                const dataWarehouseSeries = series!.filter(isAnyDataWarehouseNode)
+                const dataWarehouseSeries = series!.filter(
+                    (node) => isAnyDataWarehouseNode(node) || isSystemTableNode(node)
+                )
                 const dataWarehouseTableNames = Array.from(new Set(dataWarehouseSeries.map((node) => node.table_name)))
                 return dataWarehouseTableNames.flatMap((tableName) =>
                     Object.values(dataWarehouseTablesMap[tableName]?.fields ?? {})
@@ -907,7 +916,9 @@ const handleQuerySourceUpdateSideEffects = (
     if (
         kind === NodeKind.TrendsQuery &&
         (mergedUpdate as TrendsQuery).series?.length >= 0 &&
-        (mergedUpdate as TrendsQuery).series.some((series) => isDataWarehouseNode(series)) &&
+        (mergedUpdate as TrendsQuery).series.some(
+            (series) => isDataWarehouseNode(series) || isSystemTableNode(series)
+        ) &&
         (mergedUpdate as TrendsQuery).series.some((series) => isActionsNode(series) || isEventsNode(series))
     ) {
         ;(mergedUpdate as TrendsQuery).breakdownFilter = undefined

@@ -26,6 +26,7 @@ import {
     isFunnelsQuery,
     isGroupNode,
     isLifecycleDataWarehouseNode,
+    isSystemTableNode,
     isLifecycleQuery,
     isPathsQuery,
     isRetentionQuery,
@@ -48,7 +49,7 @@ const getFilterId = (node: AnyEntityNode<AnyDataWarehouseNode> | GroupNode): any
         return undefined
     }
 
-    if (isAnyDataWarehouseNode(node)) {
+    if (isAnyDataWarehouseNode(node) || isSystemTableNode(node)) {
         return node.table_name
     }
 
@@ -64,13 +65,14 @@ export const seriesNodeToFilter = (
     index?: number
 ): ActionFilter => {
     const entity: ActionFilter = objectClean({
-        type: isAnyDataWarehouseNode(node)
-            ? EntityTypes.DATA_WAREHOUSE
-            : isGroupNode(node)
-              ? EntityTypes.GROUPS
-              : isActionsNode(node)
-                ? EntityTypes.ACTIONS
-                : EntityTypes.EVENTS,
+        type:
+            isAnyDataWarehouseNode(node) || isSystemTableNode(node)
+                ? EntityTypes.DATA_WAREHOUSE
+                : isGroupNode(node)
+                  ? EntityTypes.GROUPS
+                  : isActionsNode(node)
+                    ? EntityTypes.ACTIONS
+                    : EntityTypes.EVENTS,
         id: getFilterId(node),
         order: index,
         name: node.name,
@@ -89,6 +91,13 @@ export const seriesNodeToFilter = (
                   id_field: node.id_field,
                   timestamp_field: node.timestamp_field,
                   distinct_id_field: node.distinct_id_field,
+              }
+            : {}),
+        ...(isSystemTableNode(node)
+            ? {
+                  table_name: node.table_name,
+                  id_field: node.id_field,
+                  timestamp_field: node.timestamp_field,
               }
             : {}),
         ...(isFunnelsDataWarehouseNode(node)
@@ -132,7 +141,7 @@ export const seriesToActionsAndEvents = (
             events.push(entity)
         } else if (isActionsNode(node)) {
             actions.push(entity)
-        } else if (isAnyDataWarehouseNode(node)) {
+        } else if (isAnyDataWarehouseNode(node) || isSystemTableNode(node)) {
             data_warehouse.push(entity)
         } else if (isGroupNode(node)) {
             groups.push(entity)

@@ -12,6 +12,7 @@ from posthog.schema import (
     GroupNode,
     HogQLPropertyFilter,
     LifecycleDataWarehouseNode,
+    SystemTableNode,
 )
 
 from posthog.types import AnyPropertyFilter, EntityNode, FunnelExclusionEntityNode
@@ -22,8 +23,8 @@ def is_equal_type(a: EntityNode, b: EntityNode | FunnelExclusionEntityNode) -> b
         return isinstance(b, EventsNode) or isinstance(b, FunnelExclusionEventsNode)
     if isinstance(a, ActionsNode):
         return isinstance(b, ActionsNode) or isinstance(b, FunnelExclusionActionsNode)
-    if isinstance(a, DataWarehouseNode):
-        return isinstance(b, DataWarehouseNode)
+    if isinstance(a, (DataWarehouseNode, SystemTableNode)):
+        return isinstance(b, (DataWarehouseNode, SystemTableNode))
     if isinstance(a, LifecycleDataWarehouseNode):
         return isinstance(b, LifecycleDataWarehouseNode)
     if isinstance(a, FunnelsDataWarehouseNode):
@@ -65,14 +66,13 @@ def is_equal(a: EntityNode, b: EntityNode | FunnelExclusionEntityNode, compare_p
 
     # different data source
     if (
-        isinstance(a, DataWarehouseNode)
-        and isinstance(b, DataWarehouseNode)
+        isinstance(a, (DataWarehouseNode, SystemTableNode))
+        and isinstance(b, (DataWarehouseNode, SystemTableNode))
         and (
             a.id != b.id
             or a.table_name != b.table_name
             or a.id_field != b.id_field
             or a.timestamp_field != b.timestamp_field
-            or a.distinct_id_field != b.distinct_id_field
         )
     ):
         return False
@@ -132,8 +132,8 @@ def is_superset(a: EntityNode, b: EntityNode | FunnelExclusionEntityNode) -> boo
 
 
 def _nodes_equal(
-    a_nodes: list[EventsNode | ActionsNode | DataWarehouseNode],
-    b_nodes: list[EventsNode | ActionsNode | DataWarehouseNode],
+    a_nodes: list[EventsNode | ActionsNode | DataWarehouseNode | SystemTableNode],
+    b_nodes: list[EventsNode | ActionsNode | DataWarehouseNode | SystemTableNode],
     compare_properties: bool,
 ) -> bool:
     """Order-independent comparison of child nodes in a GroupNode."""

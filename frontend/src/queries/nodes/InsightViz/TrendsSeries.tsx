@@ -1,5 +1,6 @@
 import { useActions, useValues } from 'kea'
 
+import { systemTablesSettingsLogic } from 'lib/components/TaxonomicFilter/systemTablesSettingsLogic'
 import { DataWarehousePopoverField, TaxonomicFilterGroupType } from 'lib/components/TaxonomicFilter/types'
 import { FEATURE_FLAGS, SINGLE_SERIES_DISPLAY_TYPES } from 'lib/constants'
 import { featureFlagLogic } from 'lib/logic/featureFlagLogic'
@@ -35,6 +36,7 @@ export function TrendsSeries(): JSX.Element | null {
     const { featureFlags } = useValues(featureFlagLogic)
 
     const { groupsTaxonomicTypes } = useValues(groupsModel)
+    const { systemTablesEnabled } = useValues(systemTablesSettingsLogic)
 
     const supportsDwhLifecycle = featureFlags[FEATURE_FLAGS.PRODUCT_ANALYTICS_DWH_LIFECYCLE_SUPPORT]
 
@@ -129,7 +131,10 @@ export function TrendsSeries(): JSX.Element | null {
                         display !== ChartDisplayType.CalendarHeatmap &&
                         display !== ChartDisplayType.BoxPlot) ||
                     (supportsDwhLifecycle && isLifecycle)
-                        ? [TaxonomicFilterGroupType.DataWarehouse]
+                        ? [
+                              TaxonomicFilterGroupType.DataWarehouse,
+                              ...(systemTablesEnabled ? [TaxonomicFilterGroupType.SystemTables] : []),
+                          ]
                         : []),
                 ]}
                 hideDeleteBtn={series?.length === 1}

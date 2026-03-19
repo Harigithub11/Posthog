@@ -81,6 +81,7 @@ export enum NodeKind {
     GroupNode = 'GroupNode',
     ActionsNode = 'ActionsNode',
     DataWarehouseNode = 'DataWarehouseNode',
+    SystemTableNode = 'SystemTableNode',
     FunnelsDataWarehouseNode = 'FunnelsDataWarehouseNode',
     LifecycleDataWarehouseNode = 'LifecycleDataWarehouseNode',
     EventsQuery = 'EventsQuery',
@@ -432,7 +433,7 @@ export interface HogQLQueryModifiers {
 export interface DataWarehouseEventsModifier {
     table_name: string
     timestamp_field: string
-    distinct_id_field: string
+    distinct_id_field?: string
     id_field: string
 }
 
@@ -767,6 +768,14 @@ export interface DataWarehouseNode extends EntityNode {
     dw_source_type?: string
 }
 
+export interface SystemTableNode extends EntityNode {
+    kind: NodeKind.SystemTableNode
+    id: string
+    id_field: string
+    table_name: string
+    timestamp_field: string
+}
+
 export interface FunnelsDataWarehouseNode extends EntityNode {
     id: string
     kind: NodeKind.FunnelsDataWarehouseNode
@@ -791,7 +800,11 @@ export interface ActionsNode extends EntityNode {
     id: integer
 }
 
-export type AnyEntityNode<WarehouseNode = DataWarehouseNode> = EventsNode | ActionsNode | WarehouseNode
+export type AnyEntityNode<WarehouseNode = DataWarehouseNode> =
+    | EventsNode
+    | ActionsNode
+    | WarehouseNode
+    | SystemTableNode
 
 export type AnyDataWarehouseNode = DataWarehouseNode | FunnelsDataWarehouseNode | LifecycleDataWarehouseNode
 

@@ -263,16 +263,17 @@ export const entityFilterLogic = kea<entityFilterLogicType>([
                         const dataWarehousePopoverFields =
                             props.dataWarehousePopoverFields ?? defaultDataWarehousePopoverFields
                         if (type === EntityTypes.DATA_WAREHOUSE) {
+                            const resolvedTableName = typeof table_name === 'undefined' ? filter.table_name : table_name
                             const updatedFilter = {
                                 ...filter,
                                 id: typeof id === 'undefined' ? filter.id : id,
                                 name: typeof name === 'undefined' ? filter.name : name,
                                 type: typeof type === 'undefined' ? filter.type : type,
                                 custom_name: typeof custom_name === 'undefined' ? filter.custom_name : custom_name,
-                                table_name: typeof table_name === 'undefined' ? filter.table_name : table_name,
+                                table_name: resolvedTableName,
                             }
 
-                            // Dynamically handle fields from dataWarehousePopoverFields
+                            // Use user-selected field values from the popover
                             dataWarehousePopoverFields.forEach(({ key }) => {
                                 const fieldValue = fieldValues[key]
                                 assignField(

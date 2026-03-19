@@ -94,7 +94,8 @@ export function getDataWarehouseItemWithFieldDefaults(
         }
     }
 
-    if (warehouseItemWithFieldDefaults.distinct_id_field == null) {
+    const isSystemTable = warehouseItem.name?.startsWith('system.')
+    if (!isSystemTable && warehouseItemWithFieldDefaults.distinct_id_field == null) {
         const distinctIdField = findFieldByNameCandidates(warehouseItemWithFieldDefaults, DISTINCT_ID_FIELD_CANDIDATES)
         if (distinctIdField) {
             warehouseItemWithFieldDefaults.distinct_id_field = distinctIdField.name
