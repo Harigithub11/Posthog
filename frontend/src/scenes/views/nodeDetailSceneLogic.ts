@@ -9,6 +9,9 @@ import { Breadcrumb, DataModelingEdge, DataModelingJob, DataModelingNode, DataWa
 
 import type { nodeDetailSceneLogicType } from './nodeDetailSceneLogicType'
 
+const MATERIALIZATION_JOBS_PAGE_SIZE = 10
+const MATERIALIZATION_REFRESH_INTERVAL = 10000
+
 export interface NodeDetailSceneLogicProps {
     id: string
 }
@@ -20,18 +23,24 @@ export interface LineageGraphData {
     edges: DataModelingEdge[]
     /** The current node's ID */
     currentNodeId: string
+    /** The route ID used to key this scene instance */
+    sceneLogicId: string
 }
 
 export const nodeDetailSceneLogic = kea<nodeDetailSceneLogicType>([
     props({} as NodeDetailSceneLogicProps),
     key((props) => props.id),
-    path((key) => ['scenes', 'models', 'nodeDetailSceneLogic', key]),
+    path((key) => ['scenes', 'views', 'nodeDetailSceneLogic', key]),
     connect({
-        actions: [dataWarehouseViewsLogic, ['updateDataWarehouseSavedQuerySuccess']],
+        actions: [
+            dataWarehouseViewsLogic,
+            ['loadDataWarehouseSavedQueriesSuccess', 'updateDataWarehouseSavedQuerySuccess'],
+        ],
     }),
     actions({
         updateNodeDescription: (description: string) => ({ description }),
         setJobsOffset: (offset: number) => ({ offset }),
+        setStartingMaterialization: (starting: boolean) => ({ starting }),
         openLineageModal: true,
         closeLineageModal: true,
     }),
@@ -49,15 +58,43 @@ export const nodeDetailSceneLogic = kea<nodeDetailSceneLogicType>([
                 closeLineageModal: () => false,
             },
         ],
+        startingMaterialization: [
+            false,
+            {
+                setStartingMaterialization: (_, { starting }) => starting,
+                loadMaterializationJobsSuccess: (state, { materializationJobs }) => {
+                    const currentJobStatus = materializationJobs?.results?.[0]?.status
+                    if (
+                        currentJobStatus &&
+                        ['Running', 'Completed', 'Failed', 'Cancelled'].includes(currentJobStatus)
+                    ) {
+                        return false
+                    }
+                    return state
+                },
+            },
+        ],
     }),
     loaders(({ props, values }) => ({
         node: {
             __default: null as DataModelingNode | null,
             loadNode: async () => {
-                return await api.dataModelingNodes.get(props.id)
+                try {
+                    return await api.dataModelingNodes.get(props.id)
+                } catch (error) {
+                    const response = await api.dataModelingNodes.list()
+                    const resolvedNode = response.results.find((node) => node.saved_query_id === props.id)
+
+                    if (resolvedNode) {
+                        return resolvedNode
+                    }
+
+                    throw error
+                }
             },
             updateNodeDescription: async ({ description }) => {
-                const updated = await api.dataModelingNodes.update(props.id, { description })
+                const nodeId = values.node?.id ?? props.id
+                const updated = await api.dataModelingNodes.update(nodeId, { description })
                 return updated
             },
         },
@@ -80,7 +117,7 @@ export const nodeDetailSceneLogic = kea<nodeDetailSceneLogicType>([
                 }
                 return await api.dataWarehouseSavedQueries.dataWarehouseDataModelingJobs.list(
                     savedQuery.id,
-                    10,
+                    Math.max(values.materializationJobs?.results.length ?? 0, MATERIALIZATION_JOBS_PAGE_SIZE),
                     values.jobsOffset
                 )
             },
@@ -93,7 +130,7 @@ export const nodeDetailSceneLogic = kea<nodeDetailSceneLogicType>([
                     return null
                 }
                 const { nodes, edges } = await api.dataModelingNodes.lineage(node.id)
-                return { nodes, edges, currentNodeId: node.id }
+                return { nodes, edges, currentNodeId: node.id, sceneLogicId: props.id }
             },
         },
     })),
@@ -102,9 +139,9 @@ export const nodeDetailSceneLogic = kea<nodeDetailSceneLogicType>([
             (s) => [s.node],
             (node: DataModelingNode | null): Breadcrumb[] => [
                 {
-                    key: 'Models',
-                    name: 'Models',
-                    path: urls.models(),
+                    key: 'Views',
+                    name: 'Views',
+                    path: urls.views(),
                 },
                 {
                     key: ['NodeDetail', node?.id || 'loading'],
@@ -113,10 +150,10 @@ export const nodeDetailSceneLogic = kea<nodeDetailSceneLogicType>([
             ],
         ],
         nodeType: [(s) => [s.node], (node: DataModelingNode | null) => node?.type ?? null],
-        hasMaterialization: [
+        showMaterializationSection: [
             (s) => [s.node, s.savedQuery],
             (node: DataModelingNode | null, savedQuery: DataWarehouseSavedQuery | null): boolean =>
-                (node?.type === 'matview' || node?.type === 'endpoint') && !!savedQuery?.is_materialized,
+                !!savedQuery && node?.type !== 'table',
         ],
         effectiveLastRunAt: [
             (s) => [s.node, s.materializationJobs],
@@ -144,7 +181,7 @@ export const nodeDetailSceneLogic = kea<nodeDetailSceneLogicType>([
             actions.loadLineageGraph()
         },
         loadSavedQuerySuccess: () => {
-            if (values.hasMaterialization) {
+            if (values.showMaterializationSection) {
                 actions.loadMaterializationJobs()
             }
         },
@@ -155,6 +192,24 @@ export const nodeDetailSceneLogic = kea<nodeDetailSceneLogicType>([
             if (values.node?.saved_query_id) {
                 actions.loadSavedQuery()
             }
+        },
+        loadDataWarehouseSavedQueriesSuccess: () => {
+            if (values.node?.saved_query_id) {
+                actions.loadNode()
+                actions.loadSavedQuery()
+                actions.loadMaterializationJobs()
+            }
+        },
+        loadMaterializationJobsSuccess: ({ payload }, breakpoint) => {
+            if (payload?.results?.[0]?.status !== 'Running' || !values.savedQuery) {
+                return
+            }
+
+            void breakpoint(MATERIALIZATION_REFRESH_INTERVAL).then(() => {
+                if (values.savedQuery) {
+                    actions.loadMaterializationJobs()
+                }
+            })
         },
     })),
     afterMount(({ actions }) => {

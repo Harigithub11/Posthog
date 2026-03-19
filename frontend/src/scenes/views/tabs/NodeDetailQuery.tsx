@@ -55,7 +55,7 @@ export function NodeDetailQuery({ id }: { id: string }): JSX.Element {
 
     return (
         <ResizableSQLEditorContainer>
-            <SQLEditor tabId={sqlEditorTabId} mode={SQLEditorMode.Embedded} />
+            <SQLEditor tabId={sqlEditorTabId} mode={SQLEditorMode.Embedded} defaultShowDatabaseTree={false} />
         </ResizableSQLEditorContainer>
     )
 }

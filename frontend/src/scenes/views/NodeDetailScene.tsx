@@ -21,15 +21,15 @@ export const scene: SceneExport<NodeDetailSceneLogicProps> = {
 }
 
 export function NodeDetailScene({ id }: NodeDetailSceneLogicProps): JSX.Element {
-    const { node, nodeLoading, hasMaterialization } = useValues(nodeDetailSceneLogic({ id }))
+    const { node, nodeLoading, showMaterializationSection } = useValues(nodeDetailSceneLogic({ id }))
 
     return (
-        <SceneContent>
+        <SceneContent className="pb-16">
             <NodeDetailHeader id={id} />
             {!nodeLoading && node && <NodeDetailDetails id={id} />}
             {!nodeLoading && node && node.type !== 'table' && <NodeDetailQuery id={id} />}
             <NodeDetailLineage id={id} />
-            {hasMaterialization && <NodeDetailMaterialization id={id} />}
+            {showMaterializationSection && <NodeDetailMaterialization id={id} />}
         </SceneContent>
     )
 }

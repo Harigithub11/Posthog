@@ -110,9 +110,9 @@ function LineageNodeCompact({ data }: { data: LineageNodeData }): JSX.Element {
     const tagSettings = NODE_TYPE_TAG_SETTINGS[data.nodeType]
     const handleClick = useCallback(() => {
         if (!data.isCurrent) {
-            router.actions.push(urls.nodeDetail(data.nodeId))
+            router.actions.push(getNodeDetailUrl(data.nodeId, data.name, data.nodeType))
         }
-    }, [data.nodeId, data.isCurrent])
+    }, [data.isCurrent, data.name, data.nodeId, data.nodeType])
 
     return (
         <div
@@ -144,9 +144,9 @@ function FullscreenLineageNode({ data }: { data: LineageNodeData }): JSX.Element
     const handleClick = useCallback(() => {
         if (!data.isCurrent) {
             closeLineageModal()
-            router.actions.push(urls.nodeDetail(data.nodeId))
+            router.actions.push(getNodeDetailUrl(data.nodeId, data.name, data.nodeType))
         }
-    }, [data.nodeId, data.isCurrent, closeLineageModal])
+    }, [closeLineageModal, data.isCurrent, data.name, data.nodeId, data.nodeType])
 
     const showMetadata = data.nodeType === 'matview' || data.nodeType === 'endpoint'
 
@@ -197,6 +197,19 @@ function FullscreenLineageNode({ data }: { data: LineageNodeData }): JSX.Element
 const compactNodeTypes = { lineage: LineageNodeCompact }
 const fullscreenNodeTypes = { lineage: FullscreenLineageNode }
 
+function getNodeDetailUrl(nodeId: string, nodeName: string, nodeType: DataModelingNodeType): string {
+    if (nodeType !== 'endpoint') {
+        return urls.view(nodeId)
+    }
+
+    const versionMatch = nodeName.match(/^(.+)_v(\d+)$/)
+    if (versionMatch) {
+        return urls.endpoint(versionMatch[1], parseInt(versionMatch[2], 10))
+    }
+
+    return urls.endpoint(nodeName)
+}
+
 // --- Layout ---
 
 interface LayoutResult {
@@ -237,7 +250,7 @@ async function buildLineageLayout(data: LineageGraphData, options?: BuildLayoutO
                 nodeType: n.type,
                 isCurrent,
                 nodeId: n.id,
-                sceneId: data.currentNodeId,
+                sceneId: data.sceneLogicId,
                 lastJobStatus:
                     isCurrent && options?.currentNodeStatus
                         ? (options.currentNodeStatus as DataModelingJobStatus)

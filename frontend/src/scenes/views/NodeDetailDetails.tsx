@@ -23,6 +23,14 @@ export function NodeDetailDetails({ id }: { id: string }): JSX.Element | null {
                 <LemonTag type={tagSettings.type}>{tagSettings.label}</LemonTag>
             </div>
             <div className="flex items-center gap-2">
+                <span className="text-muted text-sm">Upstream:</span>
+                <span>{node.upstream_count}</span>
+            </div>
+            <div className="flex items-center gap-2">
+                <span className="text-muted text-sm">Downstream:</span>
+                <span>{node.downstream_count}</span>
+            </div>
+            <div className="flex items-center gap-2">
                 <span className="text-muted text-sm">Created:</span>
                 {node.created_at ? <TZLabel time={node.created_at} /> : <span className="text-muted">-</span>}
             </div>
