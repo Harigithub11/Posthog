@@ -24,6 +24,32 @@ class Text(models.Model):
     team = models.ForeignKey("Team", on_delete=models.CASCADE)
 
 
+class DashboardWidget(models.Model):
+    class WidgetType(models.TextChoices):
+        EXPERIMENT = "experiment", "Experiment"
+        LOGS = "logs", "Logs"
+        ERROR_TRACKING = "error_tracking", "Error tracking"
+        SESSION_REPLAYS = "session_replays", "Session replays"
+        SURVEY_RESPONSES = "survey_responses", "Survey responses"
+        FEATURE_FLAG = "feature_flag", "Feature flag"
+
+    widget_type = models.CharField(max_length=40, choices=WidgetType.choices)
+    config = models.JSONField(default=dict)
+    team = models.ForeignKey("Team", on_delete=models.CASCADE)
+    created_by = models.ForeignKey("User", on_delete=models.SET_NULL, null=True, blank=True)
+    last_modified_at = models.DateTimeField(default=timezone.now)
+    last_modified_by = models.ForeignKey(
+        "User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="modified_dashboard_widgets",
+    )
+
+    def __str__(self) -> str:
+        return f"DashboardWidget({self.widget_type}, id={self.pk})"
+
+
 class DashboardTileManager(models.Manager):
     def get_queryset(self):
         return super().get_queryset().exclude(deleted=True).exclude(dashboard__deleted=True)
@@ -40,6 +66,12 @@ class DashboardTile(models.Model):
     )
     text = models.ForeignKey(
         "posthog.Text",
+        on_delete=models.CASCADE,
+        related_name="dashboard_tiles",
+        null=True,
+    )
+    widget = models.ForeignKey(
+        "posthog.DashboardWidget",
         on_delete=models.CASCADE,
         related_name="dashboard_tiles",
         null=True,
@@ -75,8 +107,13 @@ class DashboardTile(models.Model):
                 name=f"unique_dashboard_text",
                 condition=Q(("text__isnull", False)),
             ),
+            UniqueConstraint(
+                fields=["dashboard", "widget"],
+                name="unique_dashboard_widget",
+                condition=Q(("widget__isnull", False)),
+            ),
             models.CheckConstraint(
-                check=build_unique_relationship_check(("insight", "text")),
+                check=build_unique_relationship_check(("insight", "text", "widget")),
                 name="dash_tile_exactly_one_related_object",
             ),
         ]
@@ -102,9 +139,9 @@ class DashboardTile(models.Model):
     def clean(self):
         super().clean()
 
-        related_fields = sum(map(bool, [getattr(self, o_field) for o_field in ("insight", "text")]))
+        related_fields = sum(map(bool, [getattr(self, o_field) for o_field in ("insight", "text", "widget")]))
         if related_fields != 1:
-            raise ValidationError("Can only set either an insight or a text for this tile")
+            raise ValidationError("Can only set exactly one of insight, text, or widget for this tile")
 
         if self.insight is None and (
             self.filters_hash is not None
@@ -115,10 +152,21 @@ class DashboardTile(models.Model):
             raise ValidationError("Fields to do with refreshing are only applicable when this is an insight tile")
 
     def copy_to_dashboard(self, dashboard: Dashboard) -> None:
+        # Clone widget objects so dashboards don't share mutable FK references
+        cloned_widget = None
+        if self.widget:
+            cloned_widget = DashboardWidget.objects.create(
+                widget_type=self.widget.widget_type,
+                config=self.widget.config,
+                team=self.widget.team,
+                created_by=self.widget.created_by,
+            )
+
         DashboardTile.objects.create(
             dashboard=dashboard,
             insight=self.insight,
             text=self.text,
+            widget=cloned_widget if cloned_widget else self.widget,
             color=self.color,
             layouts=self.layouts,
             show_description=self.show_description,
@@ -143,6 +191,7 @@ class DashboardTile(models.Model):
             queryset.select_related(
                 "insight",
                 "text",
+                "widget",
                 "insight__created_by",
                 "insight__last_modified_by",
                 "insight__team",

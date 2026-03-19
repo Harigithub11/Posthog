@@ -67,6 +67,7 @@ import {
     DashboardTemplateEditorType,
     DashboardTile,
     DashboardType,
+    DashboardWidgetType,
     InsightColor,
     InsightModel,
     InsightShortId,
@@ -307,6 +308,12 @@ export const dashboardLogic = kea<dashboardLogicType>([
             allowUndo: allowUndo === undefined ? true : allowUndo,
         }),
         setTextTileId: (textTileId: number | 'new' | null) => ({ textTileId }),
+        addWidget: (widgetType: DashboardWidgetType, config: Record<string, any>) => ({ widgetType, config }),
+        updateWidgetConfig: (tileId: number, widgetId: number, config: Record<string, any>) => ({
+            tileId,
+            widgetId,
+            config,
+        }),
         setTileOverride: (tile: DashboardTile<QueryBasedInsightModel>) => ({ tile }),
 
         /**
@@ -510,6 +517,12 @@ export const dashboardLogic = kea<dashboardLogicType>([
                         const newTile = { ...tile } as Partial<DashboardTile<QueryBasedInsightModel>>
                         if (newTile.text) {
                             newTile.text = { body: newTile.text.body } as TextModel
+                        }
+                        if (newTile.widget) {
+                            newTile.widget = {
+                                ...newTile.widget,
+                                id: undefined as any,
+                            }
                         }
 
                         const { duplicateLayouts, tilesToUpdate } = calculateDuplicateLayout(values.layouts, tile.id)
@@ -988,6 +1001,12 @@ export const dashboardLogic = kea<dashboardLogicType>([
                 }),
             },
         ],
+        widgetRefreshKey: [
+            0,
+            {
+                triggerDashboardRefresh: (state: number) => state + 1,
+            },
+        ],
         refreshAnalysisCacheKey: [
             null as string | null,
             {
@@ -1266,6 +1285,15 @@ export const dashboardLogic = kea<dashboardLogicType>([
                                           name: tile.insight.name,
                                           description: tile.insight.description || '',
                                           query: tile.insight.query,
+                                          layouts: tile.layouts,
+                                          color: tile.color,
+                                      }
+                                  }
+                                  if (tile.widget) {
+                                      return {
+                                          type: 'WIDGET',
+                                          widget_type: tile.widget.widget_type,
+                                          config: tile.widget.config,
                                           layouts: tile.layouts,
                                           color: tile.color,
                                       }
@@ -1655,6 +1683,44 @@ export const dashboardLogic = kea<dashboardLogicType>([
                 rating: rating === 'up' ? 'thumbs_up' : 'thumbs_down',
                 analysis_text: values.refreshAnalysisResult,
             })
+        },
+        addWidget: async ({ widgetType, config }) => {
+            try {
+                const dashboard: DashboardType<InsightModel> = await api.update(
+                    `api/environments/${values.currentTeamId}/dashboards/${props.id}`,
+                    {
+                        tiles: [
+                            {
+                                widget: {
+                                    widget_type: widgetType,
+                                    config,
+                                },
+                            },
+                        ],
+                    }
+                )
+                actions.loadDashboardSuccess(getQueryBasedDashboard(dashboard))
+                lemonToast.success('Widget added to dashboard')
+            } catch (e) {
+                lemonToast.error('Could not add widget: ' + String(e))
+            }
+        },
+        updateWidgetConfig: async ({ tileId, widgetId, config }) => {
+            try {
+                // Find the existing widget to preserve widget_type (backend requires it on update)
+                const tile = values.tiles.find((t) => t.id === tileId)
+                const widgetType = tile?.widget?.widget_type
+                const dashboard: DashboardType<InsightModel> = await api.update(
+                    `api/environments/${values.currentTeamId}/dashboards/${props.id}`,
+                    {
+                        tiles: [{ id: tileId, widget: { id: widgetId, widget_type: widgetType, config } }],
+                    }
+                )
+                actions.loadDashboardSuccess(getQueryBasedDashboard(dashboard))
+                lemonToast.success('Widget updated')
+            } catch (e) {
+                lemonToast.error('Could not update widget: ' + String(e))
+            }
         },
         updateTileColor: async ({ tileId, color }) => {
             const previousColor = values.tiles.find((tile) => tile.id === tileId)?.color
