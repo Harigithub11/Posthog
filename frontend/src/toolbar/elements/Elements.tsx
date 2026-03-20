@@ -230,7 +230,7 @@ const HeatmapOverlayElements = memo(function HeatmapOverlayElements({
                                 {compactNumber(clickCount || 0)}
                                 {totalClickCount > 0 && clickCount ? (
                                     <span className="ml-0.5 text-xs opacity-75">
-                                        {(((clickCount || 0) / totalClickCount) * 100).toFixed(1)}%
+                                        {((clickCount / totalClickCount) * 100).toFixed(1)}%
                                     </span>
                                 ) : null}
                             </AutocaptureElementLabel>
