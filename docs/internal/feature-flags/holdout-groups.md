@@ -72,7 +72,7 @@ pub struct Holdout {
 
 | Component         | Path                                            |
 | ----------------- | ----------------------------------------------- |
-| Model             | `posthog/models/experiment.py`                  |
+| Model             | `products/experiments/backend/models/experiment.py` |
 | Serializer        | `ee/clickhouse/views/experiment_holdouts.py`    |
 | Rust evaluation   | `rust/feature-flags/src/flags/flag_matching.rs` |
 | Rust type         | `rust/feature-flags/src/flags/flag_models.rs`   |
