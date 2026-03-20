@@ -32,7 +32,7 @@ function HeatmapMouseInfo({
     onHasValue?: (hasValue: boolean) => void
 }): JSX.Element | null {
     const shiftPressed = useShiftKeyPressed()
-    const { heatmapTooltipLabel } = useValues(heatmapDataLogic({ context }))
+    const { heatmapTooltipLabel, heatmapTotalCount } = useValues(heatmapDataLogic({ context }))
 
     const mousePosition = useMousePosition(containerRef?.current)
     const value = heatmapJsRef.current?.getValueAt(mousePosition)
@@ -68,6 +68,11 @@ function HeatmapMouseInfo({
             >
                 <span className="font-semibold whitespace-nowrap">
                     {value} {heatmapTooltipLabel}
+                    {heatmapTotalCount > 0 && value != null ? (
+                        <span className="ml-1 font-normal opacity-75">
+                            ({((value / heatmapTotalCount) * 100).toFixed(1)}%)
+                        </span>
+                    ) : null}
                 </span>
             </div>
         </div>

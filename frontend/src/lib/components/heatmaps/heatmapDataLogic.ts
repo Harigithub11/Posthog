@@ -319,6 +319,16 @@ export const heatmapDataLogic = kea<heatmapDataLogicType>([
             },
         ],
 
+        heatmapTotalCount: [
+            (s) => [s.heatmapElements],
+            (heatmapElements: HeatmapElement[]): number => {
+                if (!heatmapElements || heatmapElements.length === 0) {
+                    return 0
+                }
+                return heatmapElements.reduce((sum, el) => sum + el.count, 0)
+            },
+        ],
+
         heatmapEmpty: [
             (s) => [s.rawHeatmap, s.rawHeatmapLoading],
             (rawHeatmap, rawHeatmapLoading) => {
