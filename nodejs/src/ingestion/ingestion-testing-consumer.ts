@@ -2,6 +2,7 @@ import { Message } from 'node-rdkafka'
 
 import { instrumentFn } from '~/common/tracing/tracing-utils'
 
+import { KAFKA_INGESTION_WARNINGS } from '../config/kafka-topics'
 import { KafkaConsumer } from '../kafka/consumer'
 import { KafkaProducerWrapper } from '../kafka/producer'
 import { HealthCheckResult, HealthCheckResultError, PluginServerService, PluginsServerConfig } from '../types'
@@ -15,7 +16,14 @@ import {
     TestingJoinedIngestionPipelineInput,
     createTestingJoinedIngestionPipeline,
 } from './analytics/testing-joined-ingestion-pipeline'
-import { EVENTS_OUTPUT, IngestionOutputs } from './event-processing/ingestion-outputs'
+import {
+    DLQ_OUTPUT,
+    EVENTS_OUTPUT,
+    HEATMAPS_OUTPUT,
+    INGESTION_WARNINGS_OUTPUT,
+    IngestionOutputs,
+    REDIRECT_OUTPUT,
+} from './event-processing/ingestion-outputs'
 import { latestOffsetTimestampGauge } from './ingestion-consumer'
 import { BatchPipeline } from './pipelines/batch-pipeline.interface'
 import { newBatchPipelineBuilder } from './pipelines/builders'
@@ -95,18 +103,29 @@ export class IngestionTestingConsumer {
                 topic: this.config.CLICKHOUSE_JSON_EVENTS_KAFKA_TOPIC,
                 producer: this.kafkaProducer!,
             },
+            [HEATMAPS_OUTPUT]: {
+                topic: this.config.CLICKHOUSE_HEATMAPS_KAFKA_TOPIC,
+                producer: this.kafkaProducer!,
+            },
+            [INGESTION_WARNINGS_OUTPUT]: {
+                topic: KAFKA_INGESTION_WARNINGS,
+                producer: this.kafkaProducer!,
+            },
+            [DLQ_OUTPUT]: {
+                topic: this.dlqTopic,
+                producer: this.kafkaProducer!,
+            },
+            [REDIRECT_OUTPUT]: {
+                topic: '', // redirect topic comes from the pipeline result
+                producer: this.kafkaProducer!,
+            },
         })
 
         const joinedPipelineConfig: TestingJoinedIngestionPipelineConfig = {
-            dlqTopic: this.dlqTopic,
             groupId: this.groupId,
             outputs,
-            perDistinctIdOptions: {
-                CLICKHOUSE_HEATMAPS_KAFKA_TOPIC: this.config.CLICKHOUSE_HEATMAPS_KAFKA_TOPIC,
-            },
         }
         const joinedPipelineDeps: TestingJoinedIngestionPipelineDeps = {
-            kafkaProducer: this.kafkaProducer!,
             promiseScheduler: this.promiseScheduler,
             teamManager: this.deps.teamManager,
         }

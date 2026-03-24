@@ -31,8 +31,9 @@ import {
 } from './analytics'
 import { IngestionConsumerConfig } from './config'
 import { CookielessManager } from './cookieless/cookieless-manager'
-import { AI_EVENTS_OUTPUT, EVENTS_OUTPUT, IngestionOutputs } from './event-processing/ingestion-outputs'
+import { GROUPS_OUTPUT, INGESTION_WARNINGS_OUTPUT } from './event-processing/ingestion-outputs'
 import { parseSplitAiEventsConfig } from './event-processing/split-ai-events-step'
+import { IngestionPipelineOutputs } from './ingestion-pipeline-outputs'
 import { BatchPipeline } from './pipelines/batch-pipeline.interface'
 import { newBatchPipelineBuilder } from './pipelines/builders'
 import { createContext } from './pipelines/helpers'
@@ -49,12 +50,11 @@ export type IngestionConsumerFullConfig = IngestionConsumerConfig &
 export interface IngestionConsumerDeps {
     postgres: PostgresRouter
     redisPool: RedisPool
-    kafkaProducer: KafkaProducerWrapper
     kafkaMetricsProducer: KafkaProducerWrapper
+    outputs: IngestionPipelineOutputs
     teamManager: TeamManager
     groupTypeManager: GroupTypeManager
     groupRepository: GroupRepository
-    clickhouseGroupRepository: ClickhouseGroupRepository
     personRepository: PersonRepository
     cookielessManager: CookielessManager
     hogTransformer: HogTransformerService
@@ -75,16 +75,14 @@ export class IngestionConsumer {
     protected overflowTopic?: string
     protected kafkaConsumer: KafkaConsumer
     isStopping = false
-    protected kafkaProducer?: KafkaProducerWrapper
-    protected kafkaOverflowProducer?: KafkaProducerWrapper
     public hogTransformer: HogTransformerService
     private overflowRedirectService?: OverflowRedirectService
     private overflowLaneTTLRefreshService?: OverflowRedirectService
     private tokenDistinctIdsToDrop: string[] = []
     private tokenDistinctIdsToSkipPersons: string[] = []
     private tokenDistinctIdsToForceOverflow: string[] = []
-    private personsStore: PersonsStore
-    public groupStore: BatchWritingGroupStore
+    private personsStore!: PersonsStore
+    public groupStore!: BatchWritingGroupStore
     private eventIngestionRestrictionManager: EventIngestionRestrictionManager
     private eventSchemaEnforcementManager: EventSchemaEnforcementManager
     public readonly promiseScheduler = new PromiseScheduler()
@@ -158,33 +156,10 @@ export class IngestionConsumer {
 
         this.hogTransformer = deps.hogTransformer
 
-        this.personsStore = new BatchWritingPersonsStore(this.deps.personRepository, this.deps.kafkaProducer, {
-            dbWriteMode: this.config.PERSON_BATCH_WRITING_DB_WRITE_MODE,
-            useBatchUpdates: this.config.PERSON_BATCH_WRITING_USE_BATCH_UPDATES,
-            maxConcurrentUpdates: this.config.PERSON_BATCH_WRITING_MAX_CONCURRENT_UPDATES,
-            maxOptimisticUpdateRetries: this.config.PERSON_BATCH_WRITING_MAX_OPTIMISTIC_UPDATE_RETRIES,
-            optimisticUpdateRetryInterval: this.config.PERSON_BATCH_WRITING_OPTIMISTIC_UPDATE_RETRY_INTERVAL_MS,
-            updateAllProperties: this.config.PERSON_PROPERTIES_UPDATE_ALL,
-        })
-
-        this.groupStore = new BatchWritingGroupStore(
-            this.deps.kafkaProducer,
-            this.deps.groupRepository,
-            this.deps.clickhouseGroupRepository,
-            {
-                maxConcurrentUpdates: this.config.GROUP_BATCH_WRITING_MAX_CONCURRENT_UPDATES,
-                maxOptimisticUpdateRetries: this.config.GROUP_BATCH_WRITING_MAX_OPTIMISTIC_UPDATE_RETRIES,
-                optimisticUpdateRetryInterval: this.config.GROUP_BATCH_WRITING_OPTIMISTIC_UPDATE_RETRY_INTERVAL_MS,
-            }
-        )
-
         this.kafkaConsumer = new KafkaConsumer({
             groupId: this.groupId,
             topic: this.topic,
         })
-
-        // Use the kafka producer from deps
-        this.kafkaProducer = this.deps.kafkaProducer
 
         this.topHog = new TopHog({
             kafkaProducer: this.deps.kafkaMetricsProducer,
@@ -203,33 +178,40 @@ export class IngestionConsumer {
     }
 
     public async start(): Promise<void> {
-        await Promise.all([
-            this.hogTransformer.start(),
-            // TRICKY: When we produce overflow events they are back to the kafka we are consuming from
-            KafkaProducerWrapper.create(this.config.KAFKA_CLIENT_RACK, 'CONSUMER').then((producer) => {
-                this.kafkaOverflowProducer = producer
-            }),
-        ])
+        await this.hogTransformer.start()
 
         this.topHog.start()
 
-        // Initialize pipeline
-        const outputs = new IngestionOutputs({
-            [EVENTS_OUTPUT]: {
-                topic: this.config.CLICKHOUSE_JSON_EVENTS_KAFKA_TOPIC,
-                producer: this.kafkaProducer!,
-            },
-            [AI_EVENTS_OUTPUT]: {
-                topic: this.config.CLICKHOUSE_AI_EVENTS_KAFKA_TOPIC,
-                producer: this.kafkaProducer!,
-            },
+        const outputs = this.deps.outputs
+
+        const ingestionWarningsOutput = outputs.resolve(INGESTION_WARNINGS_OUTPUT)
+
+        this.personsStore = new BatchWritingPersonsStore(this.deps.personRepository, ingestionWarningsOutput, {
+            dbWriteMode: this.config.PERSON_BATCH_WRITING_DB_WRITE_MODE,
+            useBatchUpdates: this.config.PERSON_BATCH_WRITING_USE_BATCH_UPDATES,
+            maxConcurrentUpdates: this.config.PERSON_BATCH_WRITING_MAX_CONCURRENT_UPDATES,
+            maxOptimisticUpdateRetries: this.config.PERSON_BATCH_WRITING_MAX_OPTIMISTIC_UPDATE_RETRIES,
+            optimisticUpdateRetryInterval: this.config.PERSON_BATCH_WRITING_OPTIMISTIC_UPDATE_RETRY_INTERVAL_MS,
+            updateAllProperties: this.config.PERSON_PROPERTIES_UPDATE_ALL,
         })
+
+        const groupsOutput = outputs.resolve(GROUPS_OUTPUT)
+        const clickhouseGroupRepository = new ClickhouseGroupRepository(groupsOutput.producer, groupsOutput.topic)
+        this.groupStore = new BatchWritingGroupStore(
+            this.deps.groupRepository,
+            clickhouseGroupRepository,
+            ingestionWarningsOutput,
+            {
+                maxConcurrentUpdates: this.config.GROUP_BATCH_WRITING_MAX_CONCURRENT_UPDATES,
+                maxOptimisticUpdateRetries: this.config.GROUP_BATCH_WRITING_MAX_OPTIMISTIC_UPDATE_RETRIES,
+                optimisticUpdateRetryInterval: this.config.GROUP_BATCH_WRITING_OPTIMISTIC_UPDATE_RETRY_INTERVAL_MS,
+            }
+        )
 
         const joinedPipelineConfig: JoinedIngestionPipelineConfig = {
             eventSchemaEnforcementEnabled: this.config.EVENT_SCHEMA_ENFORCEMENT_ENABLED,
             overflowEnabled: this.overflowEnabled(),
             overflowTopic: this.overflowTopic || '',
-            dlqTopic: this.dlqTopic,
             preservePartitionLocality: this.config.INGESTION_OVERFLOW_PRESERVE_PARTITION_LOCALITY,
             personsPrefetchEnabled: this.config.PERSONS_PREFETCH_ENABLED,
             cdpHogWatcherSampleRate: this.config.CDP_HOG_WATCHER_SAMPLE_RATE,
@@ -240,7 +222,6 @@ export class IngestionConsumer {
                 this.config.INGESTION_AI_EVENT_SPLITTING_TEAMS
             ),
             perDistinctIdOptions: {
-                CLICKHOUSE_HEATMAPS_KAFKA_TOPIC: this.config.CLICKHOUSE_HEATMAPS_KAFKA_TOPIC,
                 SKIP_UPDATE_EVENT_AND_PROPERTIES_STEP: this.config.SKIP_UPDATE_EVENT_AND_PROPERTIES_STEP,
                 PERSON_MERGE_MOVE_DISTINCT_ID_LIMIT: this.config.PERSON_MERGE_MOVE_DISTINCT_ID_LIMIT,
                 PERSON_MERGE_ASYNC_ENABLED: this.config.PERSON_MERGE_ASYNC_ENABLED,
@@ -251,7 +232,6 @@ export class IngestionConsumer {
             },
         }
         const joinedPipelineDeps: JoinedIngestionPipelineDeps = {
-            kafkaProducer: this.kafkaProducer!,
             personsStore: this.personsStore,
             groupStore: this.groupStore,
             hogTransformer: this.hogTransformer,
@@ -291,9 +271,6 @@ export class IngestionConsumer {
         await this.kafkaConsumer?.disconnect()
         logger.info('🔁', `${this.name} - stopping tophog`)
         await this.topHog.stop()
-        // NOTE: Don't disconnect kafkaProducer here as it's shared from deps and managed by the server
-        logger.info('🔁', `${this.name} - stopping kafka overflow producer`)
-        await this.kafkaOverflowProducer?.disconnect()
         logger.info('🔁', `${this.name} - stopping hog transformer`)
         await this.hogTransformer.stop()
         logger.info('👍', `${this.name} - stopped!`)

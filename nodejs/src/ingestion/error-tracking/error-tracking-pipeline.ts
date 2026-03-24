@@ -18,7 +18,17 @@ import {
 import { createCreateEventStep } from '../event-processing/create-event-step'
 import { createEmitEventStep } from '../event-processing/emit-event-step'
 import { createHogTransformEventStep } from '../event-processing/hog-transform-event-step'
-import { EVENTS_OUTPUT, EventOutput, IngestionOutputs } from '../event-processing/ingestion-outputs'
+import {
+    DLQ_OUTPUT,
+    DlqOutput,
+    EVENTS_OUTPUT,
+    EventOutput,
+    INGESTION_WARNINGS_OUTPUT,
+    IngestionOutputs,
+    IngestionWarningsOutput,
+    REDIRECT_OUTPUT,
+    RedirectOutput,
+} from '../event-processing/ingestion-outputs'
 import { createReadOnlyProcessGroupsStep } from '../event-processing/readonly-process-groups-step'
 import { BatchPipelineUnwrapper } from '../pipelines/batch-pipeline-unwrapper'
 import { newBatchPipelineBuilder } from '../pipelines/builders'
@@ -57,7 +67,9 @@ export interface ErrorTrackingPipelineConfig {
     eventIngestionRestrictionManager: EventIngestionRestrictionManager
     overflowEnabled: boolean
     overflowTopic: string
-    /** Producer for ingestion warnings. */
+    /** Topic for ingestion warnings. */
+    ingestionWarningsTopic: string
+    /** Producer for ingestion warnings (may differ from the main kafkaProducer). */
     ingestionWarningProducer: KafkaProducerWrapper
     /** Service for rate limiting and redirecting to overflow (main lane only). */
     overflowRedirectService?: OverflowRedirectService
@@ -104,6 +116,7 @@ export function createErrorTrackingPipeline(
         eventIngestionRestrictionManager,
         overflowEnabled,
         overflowTopic,
+        ingestionWarningsTopic,
         ingestionWarningProducer,
         overflowRedirectService,
         overflowLaneTTLRefreshService,
@@ -112,17 +125,27 @@ export function createErrorTrackingPipeline(
 
     const topHogWrapper = createTopHogWrapper(topHog)
 
-    // Create outputs configuration for the emit step
-    const outputs = new IngestionOutputs<EventOutput>({
+    const outputs = new IngestionOutputs<EventOutput | IngestionWarningsOutput | DlqOutput | RedirectOutput>({
         [EVENTS_OUTPUT]: {
             topic: outputTopic,
+            producer: kafkaProducer,
+        },
+        [INGESTION_WARNINGS_OUTPUT]: {
+            topic: ingestionWarningsTopic,
+            producer: ingestionWarningProducer,
+        },
+        [DLQ_OUTPUT]: {
+            topic: dlqTopic,
+            producer: kafkaProducer,
+        },
+        [REDIRECT_OUTPUT]: {
+            topic: '', // redirect topic comes from the pipeline result
             producer: kafkaProducer,
         },
     })
 
     const pipelineConfig: PipelineConfig = {
-        kafkaProducer,
-        dlqTopic,
+        outputs,
         promiseScheduler,
     }
 
@@ -214,7 +237,7 @@ export function createErrorTrackingPipeline(
                                             )
                                     )
                             )
-                            .handleIngestionWarnings(ingestionWarningProducer)
+                            .handleIngestionWarnings(outputs)
                 )
         )
         .handleResults(pipelineConfig)

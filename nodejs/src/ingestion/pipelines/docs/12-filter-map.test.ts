@@ -22,6 +22,12 @@ import { createTestMessage } from '../../../../tests/helpers/kafka-message'
 import { createTestTeam } from '../../../../tests/helpers/team'
 import { Team } from '../../../types'
 import { PromiseScheduler } from '../../../utils/promise-scheduler'
+import {
+    DLQ_OUTPUT,
+    INGESTION_WARNINGS_OUTPUT,
+    IngestionOutputs,
+    REDIRECT_OUTPUT,
+} from '../../event-processing/ingestion-outputs'
 import { newBatchPipelineBuilder } from '../builders'
 import { createContext } from '../helpers'
 import { PipelineWarning } from '../pipeline.interface'
@@ -52,8 +58,14 @@ describe('Filter Map', () => {
             }),
         }
         const pipelineConfig = {
-            kafkaProducer: mockKafkaProducer as any,
-            dlqTopic: 'test-dlq',
+            outputs: new IngestionOutputs({
+                [DLQ_OUTPUT]: { topic: 'test-dlq', producer: mockKafkaProducer as any },
+                [REDIRECT_OUTPUT]: { topic: '', producer: mockKafkaProducer as any },
+                [INGESTION_WARNINGS_OUTPUT]: {
+                    topic: 'clickhouse_ingestion_warnings',
+                    producer: mockKafkaProducer as any,
+                },
+            }),
             promiseScheduler,
         }
 
@@ -131,7 +143,14 @@ describe('Filter Map', () => {
                 (b) =>
                     b
                         .teamAware((b) => b.pipeBatch(createProcessEventStep()).gather())
-                        .handleIngestionWarnings(mockKafkaProducer as any)
+                        .handleIngestionWarnings(
+                            new IngestionOutputs({
+                                [INGESTION_WARNINGS_OUTPUT]: {
+                                    topic: 'clickhouse_ingestion_warnings',
+                                    producer: mockKafkaProducer as any,
+                                },
+                            })
+                        )
             )
             // Handle all results (both from subpipeline and passed-through non-OK) once at the end
             .messageAware((builder) => builder)

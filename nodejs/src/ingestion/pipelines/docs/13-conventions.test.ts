@@ -37,6 +37,12 @@ import { KafkaProducerWrapper } from '../../../kafka/producer'
 import { Team } from '../../../types'
 import { parseJSON } from '../../../utils/json-parse'
 import { PromiseScheduler } from '../../../utils/promise-scheduler'
+import {
+    DLQ_OUTPUT,
+    INGESTION_WARNINGS_OUTPUT,
+    IngestionOutputs,
+    REDIRECT_OUTPUT,
+} from '../../event-processing/ingestion-outputs'
 import { newBatchPipelineBuilder, newPipelineBuilder } from '../builders'
 import { PipelineBuilder, StartPipelineBuilder } from '../builders/pipeline-builders'
 import { createContext } from '../helpers'
@@ -448,8 +454,11 @@ describe('Pipeline Phases', () => {
         }
 
         const pipelineConfig: PipelineConfig = {
-            kafkaProducer: mockKafkaProducer,
-            dlqTopic: 'test-dlq',
+            outputs: new IngestionOutputs({
+                [DLQ_OUTPUT]: { topic: 'test-dlq', producer: mockKafkaProducer },
+                [REDIRECT_OUTPUT]: { topic: '', producer: mockKafkaProducer },
+                [INGESTION_WARNINGS_OUTPUT]: { topic: 'warnings_test', producer: mockKafkaProducer },
+            }),
             promiseScheduler,
         }
 
@@ -482,7 +491,14 @@ describe('Pipeline Phases', () => {
                                                 group.sequentially((b) => createProcessingSubpipeline(b))
                                             )
                                     )
-                                    .handleIngestionWarnings(mockKafkaProducer)
+                                    .handleIngestionWarnings(
+                                        new IngestionOutputs({
+                                            [INGESTION_WARNINGS_OUTPUT]: {
+                                                topic: 'warnings_test',
+                                                producer: mockKafkaProducer,
+                                            },
+                                        })
+                                    )
                         )
                 )
                 .handleResults(pipelineConfig)

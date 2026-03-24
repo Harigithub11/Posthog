@@ -1,10 +1,16 @@
 import { Message } from 'node-rdkafka'
 
-import { KafkaProducerWrapper } from '../../kafka/producer'
 import { Team } from '../../types'
 import { PromiseScheduler } from '../../utils/promise-scheduler'
 import { TeamManager } from '../../utils/team-manager'
-import { EventOutput, IngestionOutputs } from '../event-processing/ingestion-outputs'
+import {
+    DlqOutput,
+    EventOutput,
+    HeatmapsOutput,
+    IngestionOutputs,
+    IngestionWarningsOutput,
+    RedirectOutput,
+} from '../event-processing/ingestion-outputs'
 import { BatchPipelineBuilder } from '../pipelines/builders/batch-pipeline-builders'
 import { OkResultWithContext } from '../pipelines/filter-map-batch-pipeline'
 import { PipelineConfig } from '../pipelines/result-handling-pipeline'
@@ -21,16 +27,11 @@ import {
 import { createTestingPreTeamPreprocessingSubpipeline } from './testing-pre-team-preprocessing-subpipeline'
 
 export interface TestingJoinedIngestionPipelineConfig {
-    dlqTopic: string
     groupId: string
-    outputs: IngestionOutputs<EventOutput>
-    perDistinctIdOptions: {
-        CLICKHOUSE_HEATMAPS_KAFKA_TOPIC: string
-    }
+    outputs: IngestionOutputs<EventOutput | HeatmapsOutput | IngestionWarningsOutput | DlqOutput | RedirectOutput>
 }
 
 export interface TestingJoinedIngestionPipelineDeps {
-    kafkaProducer: KafkaProducerWrapper
     promiseScheduler: PromiseScheduler
     teamManager: TeamManager
 }
@@ -86,20 +87,17 @@ export function createTestingJoinedIngestionPipeline<
     config: TestingJoinedIngestionPipelineConfig,
     deps: TestingJoinedIngestionPipelineDeps
 ) {
-    const { dlqTopic, groupId, outputs, perDistinctIdOptions } = config
+    const { groupId, outputs } = config
 
-    const { kafkaProducer, promiseScheduler } = deps
+    const { promiseScheduler } = deps
 
     const pipelineConfig: PipelineConfig = {
-        kafkaProducer,
-        dlqTopic,
+        outputs,
         promiseScheduler,
     }
 
     const perEventConfig: TestingPerDistinctIdPipelineConfig = {
-        options: perDistinctIdOptions,
         outputs,
-        kafkaProducer,
         groupId,
     }
 
@@ -131,7 +129,7 @@ export function createTestingJoinedIngestionPipeline<
                                 )
                                 .gather()
                         )
-                        .handleIngestionWarnings(kafkaProducer)
+                        .handleIngestionWarnings(outputs)
                 )
         )
         .handleResults(pipelineConfig)

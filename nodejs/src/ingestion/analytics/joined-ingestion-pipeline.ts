@@ -1,7 +1,6 @@
 import { Message } from 'node-rdkafka'
 
 import { HogTransformerService } from '../../cdp/hog-transformations/hog-transformer.service'
-import { KafkaProducerWrapper } from '../../kafka/producer'
 import { Team } from '../../types'
 import { EventIngestionRestrictionManager } from '../../utils/event-ingestion-restrictions'
 import { EventSchemaEnforcementManager } from '../../utils/event-schema-enforcement-manager'
@@ -13,7 +12,17 @@ import { PersonsStore } from '../../worker/ingestion/persons/persons-store'
 import { CookielessManager } from '../cookieless/cookieless-manager'
 import { EventPipelineRunnerOptions } from '../event-processing/event-pipeline-options'
 import { createFlushBatchStoresStep } from '../event-processing/flush-batch-stores-step'
-import { AiEventOutput, EventOutput, IngestionOutputs } from '../event-processing/ingestion-outputs'
+import {
+    AiEventOutput,
+    DlqOutput,
+    EventOutput,
+    HeatmapsOutput,
+    IngestionOutputs,
+    IngestionWarningsOutput,
+    PersonDistinctIdsOutput,
+    PersonsOutput,
+    RedirectOutput,
+} from '../event-processing/ingestion-outputs'
 import { SplitAiEventsStepConfig } from '../event-processing/split-ai-events-step'
 import { BatchPipelineBuilder } from '../pipelines/builders/batch-pipeline-builders'
 import { TopHogRegistry, createTopHogWrapper } from '../pipelines/extensions/tophog'
@@ -37,20 +46,25 @@ export interface JoinedIngestionPipelineConfig {
     eventSchemaEnforcementEnabled: boolean
     overflowEnabled: boolean
     overflowTopic: string
-    dlqTopic: string
     preservePartitionLocality: boolean
     personsPrefetchEnabled: boolean
     cdpHogWatcherSampleRate: number
     groupId: string
-    outputs: IngestionOutputs<EventOutput | AiEventOutput>
+    outputs: IngestionOutputs<
+        | EventOutput
+        | AiEventOutput
+        | HeatmapsOutput
+        | IngestionWarningsOutput
+        | DlqOutput
+        | RedirectOutput
+        | PersonsOutput
+        | PersonDistinctIdsOutput
+    >
     splitAiEventsConfig: SplitAiEventsStepConfig
-    perDistinctIdOptions: EventPipelineRunnerOptions & {
-        CLICKHOUSE_HEATMAPS_KAFKA_TOPIC: string
-    }
+    perDistinctIdOptions: EventPipelineRunnerOptions
 }
 
 export interface JoinedIngestionPipelineDeps {
-    kafkaProducer: KafkaProducerWrapper
     personsStore: PersonsStore
     groupStore: BatchWritingGroupStore
     hogTransformer: HogTransformerService
@@ -120,7 +134,6 @@ export function createJoinedIngestionPipeline<
         eventSchemaEnforcementEnabled,
         overflowEnabled,
         overflowTopic,
-        dlqTopic,
         preservePartitionLocality,
         personsPrefetchEnabled,
         cdpHogWatcherSampleRate,
@@ -131,7 +144,6 @@ export function createJoinedIngestionPipeline<
     } = config
 
     const {
-        kafkaProducer,
         personsStore,
         groupStore,
         hogTransformer,
@@ -149,8 +161,7 @@ export function createJoinedIngestionPipeline<
     const topHogWrapper = createTopHogWrapper(topHog)
 
     const pipelineConfig: PipelineConfig = {
-        kafkaProducer,
-        dlqTopic,
+        outputs,
         promiseScheduler,
     }
 
@@ -178,7 +189,6 @@ export function createJoinedIngestionPipeline<
         hogTransformer,
         personsStore,
         groupStore,
-        kafkaProducer,
         groupId,
         topHog: topHogWrapper,
     }
@@ -216,11 +226,11 @@ export function createJoinedIngestionPipeline<
                                     createFlushBatchStoresStep({
                                         personsStore,
                                         groupStore,
-                                        kafkaProducer,
+                                        outputs,
                                     })
                                 )
                         )
-                        .handleIngestionWarnings(kafkaProducer)
+                        .handleIngestionWarnings(outputs)
                 )
         )
         .handleResults(pipelineConfig)
