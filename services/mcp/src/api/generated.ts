@@ -13102,10 +13102,10 @@ export namespace Schemas {
     * `openrouter` - Openrouter
     * `fireworks` - Fireworks
      */
-    export type ProviderEnum = typeof ProviderEnum[keyof typeof ProviderEnum];
+    export type Provider519Enum = typeof Provider519Enum[keyof typeof Provider519Enum];
 
 
-    export const ProviderEnum = {
+    export const Provider519Enum = {
       Openai: 'openai',
       Anthropic: 'anthropic',
       Gemini: 'gemini',
@@ -13117,7 +13117,7 @@ export namespace Schemas {
      * Nested serializer for model configuration.
      */
     export interface ModelConfiguration {
-      provider: ProviderEnum;
+      provider: Provider519Enum;
       /** @maxLength 100 */
       model: string;
       /** @nullable */
@@ -15644,6 +15644,7 @@ export namespace Schemas {
     * `integration_field` - integration_field
     * `email` - email
     * `native_email` - native_email
+    * `push_subscription` - push_subscription
     * `posthog_assignee` - posthog_assignee
     * `posthog_ticket_tags` - posthog_ticket_tags
      */
@@ -15661,6 +15662,7 @@ export namespace Schemas {
       IntegrationField: 'integration_field',
       Email: 'email',
       NativeEmail: 'native_email',
+      PushSubscription: 'push_subscription',
       PosthogAssignee: 'posthog_assignee',
       PosthogTicketTags: 'posthog_ticket_tags',
     } as const;
@@ -17692,7 +17694,7 @@ export namespace Schemas {
 
     export interface LLMProviderKey {
       readonly id: string;
-      provider: ProviderEnum;
+      provider: Provider519Enum;
       /** @maxLength 255 */
       name: string;
       readonly state: LLMProviderKeyStateEnum;
@@ -19430,6 +19432,56 @@ export namespace Schemas {
       /** @nullable */
       previous?: string | null;
       results: ProjectBackwardCompatBasic[];
+    }
+
+    /**
+     * * `android` - Android
+    * `ios` - iOS
+     */
+    export type PushSubscriptionPlatformEnum = typeof PushSubscriptionPlatformEnum[keyof typeof PushSubscriptionPlatformEnum];
+
+
+    export const PushSubscriptionPlatformEnum = {
+      Android: 'android',
+      Ios: 'ios',
+    } as const;
+
+    /**
+     * * `fcm` - fcm
+    * `apns` - apns
+     */
+    export type PushSubscriptionProviderEnum = typeof PushSubscriptionProviderEnum[keyof typeof PushSubscriptionProviderEnum];
+
+
+    export const PushSubscriptionProviderEnum = {
+      Fcm: 'fcm',
+      Apns: 'apns',
+    } as const;
+
+    export interface PushSubscription {
+      readonly id: string;
+      /** @maxLength 512 */
+      distinct_id: string;
+      token: string;
+      platform: PushSubscriptionPlatformEnum;
+      provider: PushSubscriptionProviderEnum;
+      is_active?: boolean;
+      readonly created_at: string;
+      readonly updated_at: string;
+      /**
+       * @maxLength 256
+       * @nullable
+       */
+      fcm_project_id?: string | null;
+    }
+
+    export interface PaginatedPushSubscriptionList {
+      count: number;
+      /** @nullable */
+      next?: string | null;
+      /** @nullable */
+      previous?: string | null;
+      results: PushSubscription[];
     }
 
     export interface QueryTabState {
@@ -22631,7 +22683,7 @@ export namespace Schemas {
 
     export interface PatchedLLMProviderKey {
       readonly id?: string;
-      provider?: ProviderEnum;
+      provider?: Provider519Enum;
       /** @maxLength 255 */
       name?: string;
       readonly state?: LLMProviderKeyStateEnum;
@@ -23260,6 +23312,23 @@ export namespace Schemas {
       /** @nullable */
       proactive_tasks_enabled?: boolean | null;
       readonly available_setup_task_ids?: readonly AvailableSetupTaskIdsEnum[];
+    }
+
+    export interface PatchedPushSubscription {
+      readonly id?: string;
+      /** @maxLength 512 */
+      distinct_id?: string;
+      token?: string;
+      platform?: PushSubscriptionPlatformEnum;
+      provider?: PushSubscriptionProviderEnum;
+      is_active?: boolean;
+      readonly created_at?: string;
+      readonly updated_at?: string;
+      /**
+       * @maxLength 256
+       * @nullable
+       */
+      fcm_project_id?: string | null;
     }
 
     export interface PatchedQueryTabState {
@@ -31148,6 +31217,17 @@ export namespace Schemas {
     };
 
     export type MessagingTemplatesListParams = {
+    /**
+     * Number of results to return per page.
+     */
+    limit?: number;
+    /**
+     * The initial index from which to return the results.
+     */
+    offset?: number;
+    };
+
+    export type PushSubscriptionsListParams = {
     /**
      * Number of results to return per page.
      */
