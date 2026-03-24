@@ -10,7 +10,10 @@ from posthog.clickhouse.table_engines import MergeTreeEngine, ReplicationScheme
 # This view is accesed through an endpoint exposed to Prometheus.
 # It's scraped every minute and store the results in VictoriaMetrics.
 def CUSTOM_METRICS_VIEW(
-    include_counters: bool = False, include_server_crash: bool = False, include_table_sizes: bool = False
+    include_counters: bool = False,
+    include_server_crash: bool = False,
+    include_table_sizes: bool = False,
+    include_merge_failures: bool = False,
 ) -> str:
     statement = """
     CREATE OR REPLACE VIEW custom_metrics(
@@ -29,6 +32,8 @@ def CUSTOM_METRICS_VIEW(
     SELECT * REPLACE (toFloat64(value) as value)
     FROM custom_metrics_events_recent_lag
     """
+    if include_merge_failures:
+        statement += "UNION ALL SELECT * REPLACE (toFloat64(value) as value) FROM custom_metrics_merge_failures\n"
     if include_counters:
         statement += "UNION ALL SELECT * FROM custom_metrics_counters\n"
     if include_server_crash:
@@ -97,6 +102,38 @@ def CUSTOM_METRICS_EVENTS_RECENT_LAG_VIEW():
         AND timestamp < now() + toIntervalMinute(3) AND inserted_at > now() - toIntervalHour(3)
     GROUP BY event;
     """ % {"team_ids": settings.INGESTION_LAG_METRIC_TEAM_IDS}
+
+
+def CUSTOM_METRICS_MERGE_FAILURES_VIEW():
+    return """
+    CREATE OR REPLACE VIEW custom_metrics_merge_failures
+    AS
+    SELECT
+        'ClickHouseCustomMetric_MergeFailures15m' AS name,
+        map('instance', hostname()) AS labels,
+        count() AS value,
+        'Number of failed merge operations in the last 15 minutes' AS help,
+        'gauge' AS type
+    FROM system.part_log
+    WHERE event_time >= now() - INTERVAL 15 MINUTE
+      AND event_type = 'MergeParts'
+      AND error > 0
+    UNION ALL
+    SELECT
+        'ClickHouseCustomMetric_MergeRetriesMaxPerTable15m' AS name,
+        map('instance', hostname()) AS labels,
+        max(cnt) AS value,
+        'Max failed merge retries for any single table in the last 15 minutes' AS help,
+        'gauge' AS type
+    FROM (
+        SELECT count() AS cnt
+        FROM system.part_log
+        WHERE event_time >= now() - INTERVAL 15 MINUTE
+          AND event_type = 'MergeParts'
+          AND error > 0
+        GROUP BY database, `table`, partition_id
+    )
+    """
 
 
 def CUSTOM_METRICS_SERVER_CRASH_VIEW():
