@@ -29,7 +29,12 @@ from posthog.sync import database_sync_to_async
 
 from products.signals.backend.models import SignalReport
 from products.signals.backend.temporal.clickhouse import execute_hogql_query_with_retry
-from products.signals.backend.temporal.llm import MAX_QUERY_TOKENS, call_llm, truncate_query_to_token_limit
+from products.signals.backend.temporal.llm import (
+    GROUPING_MODEL,
+    MAX_QUERY_TOKENS,
+    call_llm,
+    truncate_query_to_token_limit,
+)
 from products.signals.backend.temporal.summary import (
     FetchSignalsForReportInput,
     FetchSignalsForReportOutput,
@@ -245,6 +250,7 @@ async def generate_search_queries(
         user_prompt=user_prompt,
         validate=validate,
         temperature=0.7,
+        model=GROUPING_MODEL,
     )
 
 
@@ -619,6 +625,7 @@ async def match_signal_to_report(
         user_prompt=user_prompt,
         validate=validate,
         temperature=0.2,
+        model=GROUPING_MODEL,
     )
 
 
@@ -739,6 +746,7 @@ async def verify_match_specificity(
         user_prompt=specificity_prompt,
         validate=lambda text: SpecificityResult.model_validate_json(text),
         temperature=0.2,
+        model=GROUPING_MODEL,
     )
 
     return VerifyMatchSpecificityOutput(
@@ -1115,13 +1123,15 @@ async def _process_signal_batch(
     cached_type_examples: Optional[FetchSignalTypeExamplesOutput] = None,
 ) -> tuple[int, FetchSignalTypeExamplesOutput]:
     """
-    Process a batch of signals with parallel preparation (steps 1-4) and sequential
-    matching/assignment (steps 5-7). Returns (dropped_count, type_examples) — the
-    caller can cache the type_examples for subsequent batches.
+    Process a batch of signals with parallel preparation (steps 1-5) and concurrent
+    matching (steps 6-7). Returns (dropped_count, type_examples) — the caller can
+    cache the type_examples for subsequent batches.
 
-    Earlier signals in the batch are injected into later signals' candidate sets via
-    local cosine distance comparison, eliminating the need for per-signal CH waits
-    within a batch.
+    All match + specificity LLM calls within the batch run concurrently against
+    the same search snapshot from ClickHouse. This trades a small risk of
+    undergrouping (two concurrent signals for the same issue might not see each
+    other) for much lower latency — important for onboarding experience.
+    In practice, concurrent signals on the same issue are rare in the wild.
     """
     team_id = batch[0].team_id
     # Purely defensive
@@ -1129,9 +1139,9 @@ async def _process_signal_batch(
         raise ValueError("All signals in a batch must belong to the same team")
     dropped = 0
 
-    # === PARALLEL PHASE (steps 1-4) ===
+    # PARALLEL PHASE (steps 1-5)
 
-    # Step 1a: Fetch type examples if not cached (needed by query gen)
+    # Step 1: Fetch type examples if not cached (needed by query gen)
     if cached_type_examples is not None:
         type_examples_result = cached_type_examples
     else:
@@ -1142,8 +1152,7 @@ async def _process_signal_batch(
             retry_policy=RetryPolicy(maximum_attempts=3),
         )
 
-    # Step 1b: Embed all signals + generate search queries in parallel
-    # (query gen needs type examples but NOT the signal embeddings)
+    # Step 2a: Embed all signals, 2b: generate search queries (parallel)
     step1b_results = await asyncio.gather(
         *[
             workflow.execute_activity(
@@ -1172,7 +1181,7 @@ async def _process_signal_batch(
     signal_embeddings = cast(list[GenerateEmbeddingOutput], step1b_results[: len(batch)])
     query_gen_results = cast(list[GenerateSearchQueriesOutput], step1b_results[len(batch) :])
 
-    # Step 3: Embed all queries across all signals (flatten → parallel embed)
+    # Step 3: Embed all queries across all signals (parallel)
     all_queries_flat: list[tuple[int, str]] = []
     for sig_idx, qr in enumerate(query_gen_results):
         for q in qr.queries:
@@ -1192,7 +1201,7 @@ async def _process_signal_batch(
         )
     )
 
-    # Step 4: Semantic search for all queries (all parallel)
+    # Step 4: Semantic search for all queries (parallel)
     all_search_results: list[RunSignalSemanticSearchOutput] = list(
         await asyncio.gather(
             *[
@@ -1226,7 +1235,7 @@ async def _process_signal_batch(
         per_signal_query_embeddings[sig_idx].append(all_query_embeddings[flat_idx].embedding)
         per_signal_ch_results[sig_idx].append(all_search_results[flat_idx].candidates)
 
-    # Step 4.5: Fetch report contexts for all CH candidates (group-aware matching)
+    # Step 5: Fetch report contexts for all CH candidates
     all_candidate_report_ids = list({c.report_id for results in all_search_results for c in results.candidates})
     report_contexts_result: FetchReportContextsOutput = await workflow.execute_activity(
         fetch_report_contexts_activity,
@@ -1236,57 +1245,106 @@ async def _process_signal_batch(
     )
     report_contexts: dict[str, ReportContext] = report_contexts_result.contexts
 
-    # === SEQUENTIAL PHASE (steps 5-7) ===
-    processed_batch_signals: list[_ProcessedBatchSignal] = []
-    promoted_reports: dict[str, SignalReportSummaryWorkflowInputs] = {}
-    emitted_signals: list[tuple[str, AssignAndEmitSignalOutput]] = []
+    # CONCURRENT MATCHING + SPECIFICITY (step 6)
+    # All match calls fire concurrently against the same search snapshot.
 
-    for i, signal in enumerate(batch):
-        signal_id = str(uuid.uuid4())
-        try:
-            # Augment CH candidates with earlier-in-batch signals
-            augmented_results = _augment_candidates_with_batch(
-                per_signal_query_embeddings[i],
-                per_signal_ch_results[i],
-                processed_batch_signals,
-                limit=10,
-            )
-
-            # Step 5: Group-aware LLM match
-            match_result = await workflow.execute_activity(
-                match_signal_to_report_activity,
-                MatchSignalToReportInput(
-                    description=signal.description,
-                    source_product=signal.source_product,
-                    source_type=signal.source_type,
-                    queries=per_signal_queries[i],
-                    query_results=augmented_results,
-                    report_contexts=report_contexts,
-                ),
-                start_to_close_timeout=timedelta(minutes=10),
-                retry_policy=RetryPolicy(maximum_attempts=5),
-            )
-
-            # Step 5.5: PR-specificity verification for existing matches
-            updated_title: Optional[str] = None
-
-            if isinstance(match_result, ExistingReportMatch):
-                report_ctx = report_contexts.get(match_result.report_id)
-                report_title = report_ctx.title if report_ctx else ""
-
-                group_signals_result: FetchSignalsForReportOutput = await workflow.execute_activity(
-                    fetch_signals_for_report_activity,
-                    FetchSignalsForReportInput(team_id=team_id, report_id=match_result.report_id),
-                    start_to_close_timeout=timedelta(minutes=5),
-                    retry_policy=RetryPolicy(maximum_attempts=3),
+    # Step 6: Concurrent match LLM calls
+    # return_exceptions=True so one failed match doesn't kill the whole batch
+    match_results_raw: list[MatchResult | BaseException] = list(
+        await asyncio.gather(
+            *[
+                workflow.execute_activity(
+                    match_signal_to_report_activity,
+                    MatchSignalToReportInput(
+                        description=signal.description,
+                        source_product=signal.source_product,
+                        source_type=signal.source_type,
+                        queries=per_signal_queries[i],
+                        query_results=per_signal_ch_results[i],
+                        report_contexts=report_contexts,
+                    ),
+                    start_to_close_timeout=timedelta(minutes=10),
+                    retry_policy=RetryPolicy(maximum_attempts=5),
                 )
+                for i, signal in enumerate(batch)
+            ],
+            return_exceptions=True,
+        )
+    )
 
-                specificity_result: VerifyMatchSpecificityOutput = await workflow.execute_activity(
+    # Log and mark failed matches so we skip them in later steps
+    failed_match_indices: set[int] = set()
+    match_results: list[MatchResult | None] = []
+    for i, result in enumerate(match_results_raw):
+        if isinstance(result, BaseException):
+            failed_match_indices.add(i)
+            match_results.append(None)
+            dropped += 1
+            workflow.logger.exception(
+                "Match LLM call failed for signal in batch",
+                exc_info=result,
+                team_id=team_id,
+                source_product=batch[i].source_product,
+                source_type=batch[i].source_type,
+                source_id=batch[i].source_id,
+            )
+        else:
+            match_results.append(result)
+
+    # Step 7: Concurrent specificity checks for existing matches
+    existing_indices = [i for i, r in enumerate(match_results) if r is not None and isinstance(r, ExistingReportMatch)]
+
+    # Fetch group signals concurrently (deduplicated by report_id)
+    group_signals_by_idx: dict[int, FetchSignalsForReportOutput] = {}
+    if existing_indices:
+        unique_report_ids: dict[str, list[int]] = defaultdict(list)
+        for i in existing_indices:
+            match_result = cast(ExistingReportMatch, match_results[i])
+            unique_report_ids[match_result.report_id].append(i)
+
+        fetch_tasks = {
+            rid: workflow.execute_activity(
+                fetch_signals_for_report_activity,
+                FetchSignalsForReportInput(team_id=team_id, report_id=rid),
+                start_to_close_timeout=timedelta(minutes=5),
+                retry_policy=RetryPolicy(maximum_attempts=3),
+            )
+            for rid in unique_report_ids
+        }
+        fetch_results = await asyncio.gather(*fetch_tasks.values(), return_exceptions=True)
+        for rid, fetch_result in zip(fetch_tasks.keys(), fetch_results):
+            if isinstance(fetch_result, BaseException):
+                workflow.logger.exception(
+                    "Failed to fetch group signals for report",
+                    exc_info=fetch_result,
+                    team_id=team_id,
+                    report_id=rid,
+                )
+                # Mark all signals targeting this report as failed
+                for i in unique_report_ids[rid]:
+                    failed_match_indices.add(i)
+                    dropped += 1
+            else:
+                for i in unique_report_ids[rid]:
+                    group_signals_by_idx[i] = fetch_result
+
+    # Only run specificity for indices that still have valid group signals
+    specificity_indices = [i for i in existing_indices if i not in failed_match_indices]
+    specificity_by_idx: dict[int, VerifyMatchSpecificityOutput] = {}
+    if specificity_indices:
+        specificity_tasks = []
+        for i in specificity_indices:
+            match_result = cast(ExistingReportMatch, match_results[i])
+            signal = batch[i]
+            group_signals_result = group_signals_by_idx[i]
+            report_ctx = report_contexts.get(match_result.report_id)
+            specificity_tasks.append(
+                workflow.execute_activity(
                     verify_match_specificity_activity,
                     VerifyMatchSpecificityInput(
                         team_id=team_id,
                         report_id=match_result.report_id,
-                        report_title=report_title,
+                        report_title=report_ctx.title if report_ctx else "",
                         new_signal_description=signal.description,
                         new_signal_source_product=signal.source_product,
                         new_signal_source_type=signal.source_type,
@@ -1295,27 +1353,60 @@ async def _process_signal_batch(
                     start_to_close_timeout=timedelta(minutes=10),
                     retry_policy=RetryPolicy(maximum_attempts=5),
                 )
+            )
+        specificity_results = await asyncio.gather(*specificity_tasks, return_exceptions=True)
+        for idx, i in enumerate(specificity_indices):
+            result = specificity_results[idx]
+            if isinstance(result, BaseException):
+                workflow.logger.exception(
+                    "Specificity check failed for signal in batch",
+                    exc_info=result,
+                    team_id=team_id,
+                    source_product=batch[i].source_product,
+                    source_type=batch[i].source_type,
+                    source_id=batch[i].source_id,
+                )
+                failed_match_indices.add(i)
+                dropped += 1
+            else:
+                specificity_by_idx[i] = result
+
+    # Apply specificity + sequential assign+emit
+    promoted_reports: dict[str, SignalReportSummaryWorkflowInputs] = {}
+    emitted_signals: list[tuple[str, AssignAndEmitSignalOutput]] = []
+
+    for i, signal in enumerate(batch):
+        if i in failed_match_indices:
+            continue
+        signal_id = str(uuid.uuid4())
+        try:
+            match_result = match_results[i]
+            assert match_result is not None  # Guaranteed by failed_match_indices skip above
+            updated_title: Optional[str] = None
+
+            if i in specificity_by_idx and isinstance(match_result, ExistingReportMatch):
+                sr = specificity_by_idx[i]
+                report_ctx = report_contexts.get(match_result.report_id)
 
                 specificity_meta = SpecificityMetadata(
-                    pr_title=specificity_result.pr_title,
-                    specific_enough=specificity_result.specific_enough,
-                    reason=specificity_result.reason,
+                    pr_title=sr.pr_title,
+                    specific_enough=sr.specific_enough,
+                    reason=sr.reason,
                 )
 
-                if specificity_result.specific_enough:
-                    updated_title = specificity_result.pr_title
+                if sr.specific_enough:
+                    updated_title = sr.pr_title
                     match_result.match_metadata.specificity = specificity_meta
                 else:
                     match_result = NewReportMatch(
                         title=signal.description.split("\n")[0],
-                        summary=f"Split from group: {report_title}",
+                        summary=f"Split from group: {report_ctx.title if report_ctx else ''}",
                         match_metadata=NoMatchMetadata(
-                            reason=f'PR-specificity rejected: "{specificity_result.pr_title}" — {specificity_result.reason}',
+                            reason=f'PR-specificity rejected: "{sr.pr_title}" — {sr.reason}',
                             specificity_rejection=specificity_meta,
                         ),
                     )
 
-            # Step 6: Assign + emit
             assign_result: AssignAndEmitSignalOutput = await workflow.execute_activity(
                 assign_and_emit_signal_activity,
                 AssignAndEmitSignalInput(
@@ -1335,33 +1426,7 @@ async def _process_signal_batch(
                 retry_policy=RetryPolicy(maximum_attempts=3),
             )
 
-            # Track for augmenting later signals in the batch
-            processed_batch_signals.append(
-                _ProcessedBatchSignal(
-                    signal_id=signal_id,
-                    report_id=assign_result.report_id,
-                    content=signal.description,
-                    source_product=signal.source_product,
-                    source_type=signal.source_type,
-                    embedding=signal_embeddings[i].embedding,
-                )
-            )
             emitted_signals.append((signal_id, assign_result))
-
-            # Update local report_contexts so later signals in the batch see this report
-            if isinstance(match_result, ExistingReportMatch):
-                old_ctx = report_contexts.get(assign_result.report_id)
-                report_contexts[assign_result.report_id] = ReportContext(
-                    report_id=assign_result.report_id,
-                    title=updated_title or (old_ctx.title if old_ctx else ""),
-                    signal_count=(old_ctx.signal_count if old_ctx else 0) + 1,
-                )
-            else:
-                report_contexts[assign_result.report_id] = ReportContext(
-                    report_id=assign_result.report_id,
-                    title=match_result.title,
-                    signal_count=1,
-                )
 
             if assign_result.promoted:
                 promoted_reports[assign_result.report_id] = SignalReportSummaryWorkflowInputs(
@@ -1377,8 +1442,7 @@ async def _process_signal_batch(
                 source_type=signal.source_type,
                 source_id=signal.source_id,
             )
-
-    # Step 7: Wait for all emitted signals to land in CH so the next batch can find them
+    # Step 8: Wait for all emitted signals to land in ClickHouse
     if emitted_signals:
         await workflow.execute_activity(
             wait_for_signal_in_clickhouse_activity,
