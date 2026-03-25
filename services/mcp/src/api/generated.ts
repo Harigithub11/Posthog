@@ -7347,6 +7347,7 @@ export namespace Schemas {
       /** List of failed copy attempts */
       failed: CopyFlagsResult[];
     }
+
     export interface CoreEvent {
       readonly id: string;
       /**
