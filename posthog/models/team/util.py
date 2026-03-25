@@ -2,6 +2,9 @@ import time
 from datetime import timedelta
 from typing import Any
 
+from django.db import transaction
+from django.db.utils import ProgrammingError
+
 import structlog
 
 from posthog.cache_utils import cache_for
@@ -26,7 +29,6 @@ def delete_bulky_postgres_data(team_ids: list[int]):
     "Efficiently delete large tables for teams from postgres. Using normal CASCADE delete here can time out"
 
     from posthog.models.cohort import Cohort, CohortPeople
-    from posthog.models.feature_flag.feature_flag import FeatureFlagHashKeyOverride
     from posthog.models.group.group import Group
     from posthog.models.group_type_mapping import GroupTypeMapping
     from posthog.models.insight_caching_state import InsightCachingState
@@ -35,6 +37,7 @@ def delete_bulky_postgres_data(team_ids: list[int]):
     from products.data_modeling.backend.models import Edge, Node
     from products.early_access_features.backend.models import EarlyAccessFeature
     from products.error_tracking.backend.models import ErrorTrackingIssueFingerprintV2
+    from products.feature_flags.backend.models.feature_flag import FeatureFlagHashKeyOverride
 
     # Delete data modeling nodes and edges first to not block Team deletion.
     # Team cascades to DataWarehouseSavedQuery, but it has PROTECT on delete.
@@ -51,7 +54,12 @@ def delete_bulky_postgres_data(team_ids: list[int]):
     cohort_ids = list(Cohort.objects.filter(team_id__in=team_ids).values_list("id", flat=True))
     _raw_delete(CohortPeople.objects.filter(cohort_id__in=cohort_ids))
 
-    _raw_delete(FeatureFlagHashKeyOverride.objects.filter(team_id__in=team_ids))
+    try:
+        with transaction.atomic():
+            _raw_delete(FeatureFlagHashKeyOverride.objects.filter(team_id__in=team_ids))
+    except ProgrammingError:
+        # FeatureFlagHashKeyOverride is managed=False — table may not exist in test DBs
+        pass
     _raw_delete(Group.objects.filter(team_id__in=team_ids))
     _raw_delete(GroupTypeMapping.objects.filter(team_id__in=team_ids))
     _raw_delete_batch(Person.objects.filter(team_id__in=team_ids))
