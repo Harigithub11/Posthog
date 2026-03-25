@@ -18,8 +18,7 @@ use crate::metrics_const::{
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
-use futures::stream::FuturesUnordered;
-use futures::{StreamExt, TryStreamExt};
+use futures::{stream, StreamExt, TryStreamExt};
 use object_store::limit::LimitStore;
 use object_store::path::Path as ObjectPath;
 use object_store::{ObjectStore, ObjectStoreExt};
@@ -100,6 +99,7 @@ pub struct S3Downloader {
     s3_bucket: String,
     s3_key_prefix: String,
     checkpoint_import_window_hours: u32,
+    max_concurrent_downloads: usize,
 }
 
 impl S3Downloader {
@@ -117,6 +117,7 @@ impl S3Downloader {
             s3_bucket: config.s3_bucket.clone(),
             s3_key_prefix: config.s3_key_prefix.clone(),
             checkpoint_import_window_hours: config.checkpoint_import_window_hours,
+            max_concurrent_downloads: config.max_concurrent_checkpoint_file_downloads,
         })
     }
 }
@@ -288,9 +289,9 @@ impl CheckpointDownloader for S3Downloader {
             }
         }
 
-        // Build download futures using FuturesUnordered for early exit with sibling cancellation.
-        // LimitStore's semaphore still limits concurrent S3 requests.
-        let mut futures: FuturesUnordered<_> = remote_keys
+        // Collect download tasks as owned data upfront to avoid lifetime issues
+        // with buffer_unordered requiring 'static futures.
+        let download_tasks: Vec<_> = remote_keys
             .iter()
             .map(|remote_key| {
                 let remote_filename = remote_key
@@ -299,23 +300,32 @@ impl CheckpointDownloader for S3Downloader {
                     .unwrap_or(remote_key)
                     .to_string();
                 let local_filepath = local_base_path.join(&remote_filename);
+                (remote_key.clone(), local_filepath)
+            })
+            .collect();
 
+        // Build download stream with bounded concurrency.
+        // buffer_unordered limits how many futures are polled simultaneously,
+        // bounding memory from concurrent S3 streams and open file handles.
+        let max_concurrent = self.max_concurrent_downloads;
+        let mut download_stream =
+            stream::iter(download_tasks.into_iter().map(|(remote_key, local_filepath)| {
                 async move {
                     self.download_and_store_file_cancellable(
-                        remote_key,
+                        &remote_key,
                         &local_filepath,
                         cancel_token,
                     )
                     .await
                     .with_context(|| format!("Failed to download: {remote_key}"))
                 }
-            })
-            .collect();
+            }))
+            .buffer_unordered(max_concurrent);
 
         let mut first_error: Option<anyhow::Error> = None;
 
         // Process completions, cancel siblings on first error
-        while let Some(result) = futures.next().await {
+        while let Some(result) = download_stream.next().await {
             if let Err(e) = result {
                 first_error = Some(e);
                 // Cancel siblings via the attempt token - they'll exit on next chunk iteration
@@ -328,7 +338,7 @@ impl CheckpointDownloader for S3Downloader {
 
         // Drain remaining futures - they'll exit quickly due to cancellation check in their loop
         if first_error.is_some() {
-            while futures.next().await.is_some() {}
+            while download_stream.next().await.is_some() {}
         }
 
         if let Some(e) = first_error {
@@ -416,24 +426,25 @@ mod tests {
 
     #[test]
     fn test_format_checkpoint_list_prefix_trailing_slash_prevents_prefix_collision() {
-        // This test documents the bug fix: partition 41 must NOT match partition 419
+        // Partitions of the same topic share a hash prefix, but the trailing slash
+        // on the partition number in the path prevents prefix collision
         let prefix_41 = format_checkpoint_list_prefix("checkpoints", "events", 41);
         let prefix_419 = format_checkpoint_list_prefix("checkpoints", "events", 419);
 
-        let hash_41 = hash_prefix_for_partition("events", 41);
-        let hash_419 = hash_prefix_for_partition("events", 419);
-        assert_eq!(prefix_41, format!("{hash_41}/checkpoints/events/41/"));
-        assert_eq!(prefix_419, format!("{hash_419}/checkpoints/events/419/"));
+        let hash = hash_prefix_for_partition("events", 41);
+        assert_eq!(hash, hash_prefix_for_partition("events", 419));
+        assert_eq!(prefix_41, format!("{hash}/checkpoints/events/41/"));
+        assert_eq!(prefix_419, format!("{hash}/checkpoints/events/419/"));
 
-        // Different partitions get different hashes, so prefixes never collide
-        assert_ne!(hash_41, hash_419);
+        // Trailing slash ensures partition 41 prefix doesn't match partition 419
         assert!(!prefix_419.starts_with(&prefix_41));
+        assert!(!prefix_41.starts_with(&prefix_419));
 
-        // Simulated S3 keys that would be returned (with hash)
+        // Simulated S3 keys
         let key_for_41 =
-            format!("{hash_41}/checkpoints/events/41/2026-01-22T12-00-00Z/metadata.json");
+            format!("{hash}/checkpoints/events/41/2026-01-22T12-00-00Z/metadata.json");
         let key_for_419 =
-            format!("{hash_419}/checkpoints/events/419/2026-01-22T12-00-00Z/metadata.json");
+            format!("{hash}/checkpoints/events/419/2026-01-22T12-00-00Z/metadata.json");
 
         // Prefix 41 correctly matches only partition 41's keys
         assert!(key_for_41.starts_with(&prefix_41));
