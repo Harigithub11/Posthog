@@ -32933,23 +32933,7 @@
                 },
                 "options": {
                     "items": {
-                        "additionalProperties": false,
-                        "properties": {
-                            "fields": {
-                                "items": {
-                                    "$ref": "#/definitions/SourceFieldConfig"
-                                },
-                                "type": "array"
-                            },
-                            "label": {
-                                "type": "string"
-                            },
-                            "value": {
-                                "type": "string"
-                            }
-                        },
-                        "required": ["label", "value"],
-                        "type": "object"
+                        "$ref": "#/definitions/SourceFieldSelectConfigOption"
                     },
                     "type": "array"
                 },
@@ -32967,6 +32951,25 @@
         "SourceFieldSelectConfigConverter": {
             "enum": ["str_to_int", "str_to_bool", "str_to_optional_int"],
             "type": "string"
+        },
+        "SourceFieldSelectConfigOption": {
+            "additionalProperties": false,
+            "properties": {
+                "fields": {
+                    "items": {
+                        "$ref": "#/definitions/SourceFieldConfig"
+                    },
+                    "type": "array"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            },
+            "required": ["label", "value"],
+            "type": "object"
         },
         "SourceFieldSwitchGroupConfig": {
             "additionalProperties": false,
