@@ -71,6 +71,35 @@ const appendPathNodes = (
             return startNodeColor
         })
         .on('mouseover', (_event: MouseEvent, data: PathNodeData) => {
+            // Highlight all links connected to this node
+            const connectedLinkIndices = new Set<number>()
+
+            // Highlight outgoing links and trace forward
+            const forwardQueue = [...data.sourceLinks]
+            for (const link of forwardQueue) {
+                if (!connectedLinkIndices.has(link.index)) {
+                    connectedLinkIndices.add(link.index)
+                    for (const nextLink of link.target.sourceLinks) {
+                        forwardQueue.push(nextLink)
+                    }
+                }
+            }
+
+            // Highlight incoming links and trace backward
+            const backwardQueue = [...data.targetLinks]
+            for (const link of backwardQueue) {
+                if (!connectedLinkIndices.has(link.index)) {
+                    connectedLinkIndices.add(link.index)
+                    for (const prevLink of link.source.targetLinks) {
+                        backwardQueue.push(prevLink)
+                    }
+                }
+            }
+
+            svg.selectAll('path[id^="path-"]').attr('stroke', (d: PathNodeData) =>
+                connectedLinkIndices.has(d.index) ? 'var(--paths-link-hover)' : 'var(--paths-link)'
+            )
+
             if (data.y1 - data.y0 > HIDE_PATH_CARD_HEIGHT) {
                 return
             }
@@ -81,6 +110,9 @@ const appendPathNodes = (
                         : { ...node, visible: node.y1 - node.y0 > HIDE_PATH_CARD_HEIGHT }
                 )
             )
+        })
+        .on('mouseleave', () => {
+            svg.selectAll('path[id^="path-"]').attr('stroke', 'var(--paths-link)')
         })
         .append('title')
         .text((d: PathNodeData) => `${stripHTTP(d.name)}\n${d.value.toLocaleString()}`)
@@ -152,7 +184,7 @@ const appendPathLinks = (
             )
         })
         .on('mouseleave', () => {
-            svg.selectAll('path').attr('stroke', 'var(--paths-link)')
+            svg.selectAll('path[id^="path-"]').attr('stroke', 'var(--paths-link)')
         })
 
     link.append('g')
