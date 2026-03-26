@@ -11,8 +11,7 @@ import { INSIGHT_TYPES_METADATA } from 'scenes/saved-insights/SavedInsights'
 import { SavedInsightsTable } from 'scenes/saved-insights/SavedInsightsTable'
 import { urls } from 'scenes/urls'
 
-import { NodeKind } from '~/queries/schema/schema-general'
-import { HogQLQuery, InsightQueryNode } from '~/queries/schema/schema-general'
+import { EndpointQueryNode, HogQLQuery, NodeKind } from '~/queries/schema/schema-general'
 import { isNodeWithSource } from '~/queries/utils'
 import { InsightType, QueryBasedInsightModel } from '~/types'
 
@@ -53,10 +52,12 @@ export function InsightPickerEndpointModal({ tabId }: InsightPickerEndpointModal
     const { closeModal, selectInsight, toggleShowMoreInsightTypes } = useActions(insightPickerEndpointModalLogic)
     const { openCreateFromInsightModal } = useActions(endpointLogic({ tabId }))
 
-    const insightQuery: HogQLQuery | InsightQueryNode | null = selectedInsight?.query
+    // Safe cast: unsupported query types (FunnelsQuery, PathsQuery, StickinessQuery)
+    // are filtered out via isInsightSupported on the SavedInsightsTable
+    const insightQuery: HogQLQuery | EndpointQueryNode | null = selectedInsight?.query
         ? isNodeWithSource(selectedInsight.query)
-            ? (selectedInsight.query.source as HogQLQuery | InsightQueryNode)
-            : (selectedInsight.query as HogQLQuery | InsightQueryNode)
+            ? (selectedInsight.query.source as unknown as HogQLQuery | EndpointQueryNode)
+            : (selectedInsight.query as unknown as HogQLQuery | EndpointQueryNode)
         : null
 
     const additionalTypes = Object.entries(INSIGHT_TYPES_METADATA).filter(
