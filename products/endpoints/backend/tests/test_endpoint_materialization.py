@@ -321,22 +321,50 @@ class TestEndpointMaterialization(ClickhouseTestMixin, APIBaseTest):
         self.assertEqual(saved_query.query["kind"], "HogQLQuery")
         self.assertIsInstance(saved_query.query["query"], str)
 
-    def test_cannot_materialize_stickiness_query(self):
+    @parameterized.expand(
+        [
+            (
+                "stickiness",
+                {
+                    "kind": "StickinessQuery",
+                    "series": [{"kind": "EventsNode", "event": "$pageview"}],
+                    "dateRange": {"date_from": "-7d"},
+                    "interval": "day",
+                },
+            ),
+            (
+                "paths",
+                {
+                    "kind": "PathsQuery",
+                    "pathsFilter": {
+                        "includeEventTypes": ["$pageview"],
+                    },
+                },
+            ),
+            (
+                "funnels",
+                {
+                    "kind": "FunnelsQuery",
+                    "series": [
+                        {"kind": "EventsNode", "event": "$pageview"},
+                        {"kind": "EventsNode", "event": "$pageleave"},
+                    ],
+                    "funnelsFilter": {"funnelVizType": "steps"},
+                },
+            ),
+        ]
+    )
+    def test_cannot_materialize_disallowed_query(self, _name, query):
         endpoint = create_endpoint_with_version(
-            name="test_stickiness_query",
+            name=f"test_{_name}_query",
             team=self.team,
-            query={
-                "kind": "StickinessQuery",
-                "series": [{"kind": "EventsNode", "event": "$pageview"}],
-                "dateRange": {"date_from": "-7d"},
-                "interval": "day",
-            },
+            query=query,
             created_by=self.user,
         )
         version = endpoint.versions.first()
         can_materialize, reason = version.can_materialize()
         self.assertFalse(can_materialize)
-        self.assertIn("StickinessQuery", reason)
+        self.assertIn(query["kind"], reason)
 
     def test_can_materialize_retention_query(self):
         _create_event(
@@ -383,23 +411,6 @@ class TestEndpointMaterialization(ClickhouseTestMixin, APIBaseTest):
         assert saved_query is not None
         assert saved_query.query is not None
         self.assertEqual(saved_query.query["kind"], "HogQLQuery")
-
-    def test_cannot_materialize_paths_query(self):
-        endpoint = create_endpoint_with_version(
-            name="test_paths_query",
-            team=self.team,
-            query={
-                "kind": "PathsQuery",
-                "pathsFilter": {
-                    "includeEventTypes": ["$pageview"],
-                },
-            },
-            created_by=self.user,
-        )
-        version = endpoint.versions.first()
-        can_materialize, reason = version.can_materialize()
-        self.assertFalse(can_materialize)
-        self.assertIn("PathsQuery", reason)
 
     def test_materialization_status_in_response(self):
         """Test that materialization status is included in endpoint response."""

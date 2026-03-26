@@ -11,6 +11,7 @@ import { INSIGHT_TYPES_METADATA } from 'scenes/saved-insights/SavedInsights'
 import { SavedInsightsTable } from 'scenes/saved-insights/SavedInsightsTable'
 import { urls } from 'scenes/urls'
 
+import { NodeKind } from '~/queries/schema/schema-general'
 import { HogQLQuery, InsightQueryNode } from '~/queries/schema/schema-general'
 import { isNodeWithSource } from '~/queries/utils'
 import { InsightType, QueryBasedInsightModel } from '~/types'
@@ -18,6 +19,25 @@ import { InsightType, QueryBasedInsightModel } from '~/types'
 import { EndpointFromInsightModal } from './EndpointFromInsightModal'
 import { endpointLogic } from './endpointLogic'
 import { insightPickerEndpointModalLogic } from './insightPickerEndpointModalLogic'
+
+const UNSUPPORTED_INSIGHT_TYPES = new Set([
+    InsightType.FUNNELS,
+    InsightType.PATHS,
+    InsightType.STICKINESS,
+    InsightType.JSON,
+    InsightType.HOG,
+])
+
+const UNSUPPORTED_QUERY_KINDS = new Set([NodeKind.FunnelsQuery, NodeKind.PathsQuery, NodeKind.StickinessQuery])
+
+function isInsightSupported(insight: QueryBasedInsightModel): boolean {
+    const query = insight.query
+    if (!query) {
+        return true
+    }
+    const kind = isNodeWithSource(query) ? (query as { source?: { kind?: string } }).source?.kind : query.kind
+    return !kind || !UNSUPPORTED_QUERY_KINDS.has(kind as NodeKind)
+}
 
 const QUICK_CREATE_TYPES = [
     { type: InsightType.TRENDS, icon: IconTrends, label: 'Trend' },
@@ -38,14 +58,6 @@ export function InsightPickerEndpointModal({ tabId }: InsightPickerEndpointModal
             ? (selectedInsight.query.source as HogQLQuery | InsightQueryNode)
             : (selectedInsight.query as HogQLQuery | InsightQueryNode)
         : null
-
-    const UNSUPPORTED_INSIGHT_TYPES = new Set([
-        InsightType.FUNNELS,
-        InsightType.PATHS,
-        InsightType.STICKINESS,
-        InsightType.JSON,
-        InsightType.HOG,
-    ])
 
     const additionalTypes = Object.entries(INSIGHT_TYPES_METADATA).filter(
         ([type, meta]) =>
@@ -130,6 +142,7 @@ export function InsightPickerEndpointModal({ tabId }: InsightPickerEndpointModal
                                     selectInsight(insight)
                                     openCreateFromInsightModal()
                                 }}
+                                filterFn={isInsightSupported}
                             />
                         </div>
                     </div>
