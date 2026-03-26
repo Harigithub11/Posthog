@@ -64,15 +64,15 @@ import {
     SurveyType,
 } from '~/types'
 
+import { SurveyBranchingFlowModal } from './branching-flow/SurveyBranchingFlowModal'
+import { SURVEY_TYPE_LABEL_MAP, SurveyMatchTypeLabels, defaultSurveyFieldValues } from './constants'
 import { SurveyAPIEditor } from './SurveyAPIEditor'
 import { SurveyAppearancePreview } from './SurveyAppearancePreview'
 import { HTMLEditor, PresentationTypeCard } from './SurveyAppearanceUtils'
 import { SurveyEditQuestionGroup, SurveyEditQuestionHeader } from './SurveyEditQuestionRow'
 import { SurveyFormAppearance } from './SurveyFormAppearance'
-import { COMMON_LANGUAGES } from './SurveyTranslations'
-import { SurveyBranchingFlowModal } from './branching-flow/SurveyBranchingFlowModal'
-import { SURVEY_TYPE_LABEL_MAP, SurveyMatchTypeLabels, defaultSurveyFieldValues } from './constants'
 import { DataCollectionType, SurveyEditSection, surveyLogic } from './surveyLogic'
+import { COMMON_LANGUAGES } from './SurveyTranslations'
 
 function SurveyCompletionConditions(): JSX.Element {
     const { survey, dataCollectionType, isAdaptiveLimitFFEnabled } = useValues(surveyLogic)
@@ -464,89 +464,112 @@ export default function SurveyEdit({ id }: { id: string }): JSX.Element {
                     }
                 />
                 <div className="sticky top-[34px] z-[100] bg-bg-3000">
-                    {hasTranslationValidationErrors ? (
-                        <LemonCollapse
-                            embedded
-                            className="my-2 bg-warning-highlight rounded"
-                            panels={[
-                                {
-                                    key: 'validation-errors',
-                                    header: {
-                                        children: (
-                                            <span className="text-sm">
-                                                ⚠️ Translation validation issues ({translationValidationErrors.length})
-                                            </span>
-                                        ),
-                                        className: 'bg-warning-highlight',
-                                    },
-                                    content: (
-                                        <div className="text-sm">
-                                            {(() => {
-                                                const errorsByLanguage = translationValidationErrors.reduce(
-                                                    (acc, error) => {
-                                                        const lang = error.language
-                                                        if (!acc[lang]) {
-                                                            acc[lang] = []
-                                                        }
-                                                        acc[lang].push(error)
-                                                        return acc
-                                                    },
-                                                    {} as Record<string, typeof translationValidationErrors>
-                                                )
+                    {(() => {
+                        // Only show translation validation errors if the survey actually has translations
+                        const hasActualTranslations = !!(
+                            (survey.translations && Object.keys(survey.translations).length > 0) ||
+                            (survey.questions &&
+                                survey.questions.some((q) => q.translations && Object.keys(q.translations).length > 0))
+                        )
+                        const shouldShowValidationErrors = hasTranslationValidationErrors && hasActualTranslations
 
-                                                return Object.entries(errorsByLanguage).map(([lang, errors]) => (
-                                                    <div key={lang} className="mb-2">
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.preventDefault()
-                                                                setEditingLanguage(lang === 'default' ? null : lang)
-                                                            }}
-                                                            className="font-semibold hover:underline cursor-pointer"
-                                                        >
-                                                            {lang === 'default'
-                                                                ? 'Default language'
-                                                                : COMMON_LANGUAGES.find((l) => l.value === lang)
-                                                                      ?.label || lang}
-                                                        </button>
-                                                        :
-                                                        <ul className="ml-4 list-disc">
-                                                            {errors.map((error, idx) => (
-                                                                <li key={idx}>
-                                                                    {error.questionIndex >= 0
-                                                                        ? `Question ${error.questionIndex + 1}`
-                                                                        : 'Survey'}{' '}
-                                                                    - {formatFieldName(error.field)}: {error.error}
-                                                                </li>
-                                                            ))}
-                                                        </ul>
-                                                    </div>
-                                                ))
-                                            })()}
-                                        </div>
-                                    ),
-                                    className: 'bg-warning-highlight',
-                                },
-                            ]}
-                        />
-                    ) : editingLanguage ? (
-                        <div className="px-4 py-2 mt-1 mb-1.5 bg-warning-highlight rounded border border-warning">
-                            <span className="text-sm">
-                                Editing translation for{' '}
-                                <strong>
-                                    {COMMON_LANGUAGES.find((l) => l.value === editingLanguage)?.label ||
-                                        editingLanguage}
-                                </strong>
-                                . Only user-facing text can be translated - all other fields are editable in the{' '}
-                                <button
-                                    onClick={() => setEditingLanguage(null)}
-                                    className="font-semibold hover:underline cursor-pointer"
-                                >
-                                    default language
-                                </button>{' '}
-                                only.
-                            </span>
-                        </div>
-                    ) : null}
+                        if (shouldShowValidationErrors) {
+                            return (
+                                <LemonCollapse
+                                    embedded
+                                    className="my-2 bg-warning-highlight rounded"
+                                    panels={[
+                                        {
+                                            key: 'validation-errors',
+                                            header: {
+                                                children: (
+                                                    <span className="text-sm">
+                                                        ⚠️ Translation validation issues (
+                                                        {translationValidationErrors.length})
+                                                    </span>
+                                                ),
+                                                className: 'bg-warning-highlight',
+                                            },
+                                            content: (
+                                                <div className="text-sm">
+                                                    {(() => {
+                                                        const errorsByLanguage = translationValidationErrors.reduce(
+                                                            (acc, error) => {
+                                                                const lang = error.language
+                                                                if (!acc[lang]) {
+                                                                    acc[lang] = []
+                                                                }
+                                                                acc[lang].push(error)
+                                                                return acc
+                                                            },
+                                                            {} as Record<string, typeof translationValidationErrors>
+                                                        )
+
+                                                        return Object.entries(errorsByLanguage).map(
+                                                            ([lang, errors]) => (
+                                                                <div key={lang} className="mb-2">
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.preventDefault()
+                                                                            setEditingLanguage(
+                                                                                lang === 'default' ? null : lang
+                                                                            )
+                                                                        }}
+                                                                        className="font-semibold hover:underline cursor-pointer"
+                                                                    >
+                                                                        {lang === 'default'
+                                                                            ? 'Default language'
+                                                                            : COMMON_LANGUAGES.find(
+                                                                                  (l) => l.value === lang
+                                                                              )?.label || lang}
+                                                                    </button>
+                                                                    :
+                                                                    <ul className="ml-4 list-disc">
+                                                                        {errors.map((error, idx) => (
+                                                                            <li key={idx}>
+                                                                                {error.questionIndex >= 0
+                                                                                    ? `Question ${error.questionIndex + 1}`
+                                                                                    : 'Survey'}{' '}
+                                                                                - {formatFieldName(error.field)}:{' '}
+                                                                                {error.error}
+                                                                            </li>
+                                                                        ))}
+                                                                    </ul>
+                                                                </div>
+                                                            )
+                                                        )
+                                                    })()}
+                                                </div>
+                                            ),
+                                            className: 'bg-warning-highlight',
+                                        },
+                                    ]}
+                                />
+                            )
+                        } else if (editingLanguage) {
+                            return (
+                                <div className="px-4 py-2 mt-1 mb-1.5 bg-warning-highlight rounded border border-warning">
+                                    <span className="text-sm">
+                                        Editing translation for{' '}
+                                        <strong>
+                                            {COMMON_LANGUAGES.find((l) => l.value === editingLanguage)?.label ||
+                                                editingLanguage}
+                                        </strong>
+                                        . Only user-facing text can be translated - all other fields are editable in the{' '}
+                                        <button
+                                            onClick={() => setEditingLanguage(null)}
+                                            className="font-semibold hover:underline cursor-pointer"
+                                        >
+                                            default language
+                                        </button>{' '}
+                                        only.
+                                    </span>
+                                </div>
+                            )
+                        }
+
+                        return null
+                    })()}
                 </div>
                 <div className="flex flex-col xl:grid xl:grid-cols-[1fr_400px] gap-x-4 h-full">
                     <div className="flex flex-col gap-2 flex-1 SurveyForm">
@@ -1012,23 +1035,35 @@ export default function SurveyEdit({ id }: { id: string }): JSX.Element {
                                                                                       />
                                                                                   </LemonField.Pure>
                                                                                   <LemonField.Pure className="mt-2">
-                                                                                      <LemonCheckbox
-                                                                                          checked={
-                                                                                              !!survey.appearance
-                                                                                                  .autoDisappear
+                                                                                      <Tooltip
+                                                                                          title={
+                                                                                              editingLanguage
+                                                                                                  ? 'Auto disappear can only be changed in the default language'
+                                                                                                  : undefined
                                                                                           }
-                                                                                          label="Auto disappear"
-                                                                                          onChange={(checked) =>
-                                                                                              setSurveyValue(
-                                                                                                  'appearance',
-                                                                                                  {
-                                                                                                      ...survey.appearance,
-                                                                                                      autoDisappear:
-                                                                                                          checked,
-                                                                                                  }
-                                                                                              )
-                                                                                          }
-                                                                                      />
+                                                                                      >
+                                                                                          <LemonCheckbox
+                                                                                              checked={
+                                                                                                  !!survey.appearance
+                                                                                                      .autoDisappear
+                                                                                              }
+                                                                                              label="Auto disappear"
+                                                                                              disabled={
+                                                                                                  editingLanguage !==
+                                                                                                  null
+                                                                                              }
+                                                                                              onChange={(checked) =>
+                                                                                                  setSurveyValue(
+                                                                                                      'appearance',
+                                                                                                      {
+                                                                                                          ...survey.appearance,
+                                                                                                          autoDisappear:
+                                                                                                              checked,
+                                                                                                      }
+                                                                                                  )
+                                                                                              }
+                                                                                          />
+                                                                                      </Tooltip>
                                                                                   </LemonField.Pure>
                                                                               </>
                                                                           ),
@@ -1046,10 +1081,35 @@ export default function SurveyEdit({ id }: { id: string }): JSX.Element {
                                                         type="secondary"
                                                         className="w-max"
                                                         icon={<IconPlus />}
+                                                        disabled={editingLanguage !== null}
+                                                        disabledReason={
+                                                            editingLanguage
+                                                                ? 'Cannot add questions while editing a translation'
+                                                                : undefined
+                                                        }
                                                         onClick={() => {
+                                                            const newQuestion = {
+                                                                ...defaultSurveyFieldValues.open.questions[0],
+                                                            } as any
+
+                                                            // Initialize translations for all existing languages
+                                                            const existingLanguages = Object.keys(
+                                                                survey.translations || {}
+                                                            )
+                                                            if (existingLanguages.length > 0) {
+                                                                newQuestion.translations = {}
+                                                                existingLanguages.forEach((lang) => {
+                                                                    newQuestion.translations[lang] = {
+                                                                        question: newQuestion.question || '',
+                                                                        description: newQuestion.description || '',
+                                                                        buttonText: newQuestion.buttonText || '',
+                                                                    }
+                                                                })
+                                                            }
+
                                                             setSurveyValue('questions', [
                                                                 ...survey.questions,
-                                                                { ...defaultSurveyFieldValues.open.questions[0] },
+                                                                newQuestion,
                                                             ])
                                                             setSelectedPageIndex(survey.questions.length)
                                                         }}
