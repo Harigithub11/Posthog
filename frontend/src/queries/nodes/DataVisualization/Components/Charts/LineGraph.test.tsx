@@ -102,29 +102,38 @@ describe('DataVisualization LineGraph', () => {
         jest.clearAllMocks()
     })
 
-    it('uses showValuesOnSeries to control datalabel visibility', () => {
-        render(<LineGraph {...makeProps()} />)
+    it.each([
+        {
+            showValuesOnSeries: false,
+            cases: [{ data: [1234, 0], dataIndex: 0, expected: false }],
+        },
+        {
+            showValuesOnSeries: true,
+            cases: [
+                { data: [1234, 0], dataIndex: 0, expected: 'auto' },
+                { data: [1234, 0], dataIndex: 1, expected: false },
+            ],
+        },
+    ])(
+        'uses showValuesOnSeries=$showValuesOnSeries to control datalabel visibility',
+        ({ showValuesOnSeries, cases }) => {
+            render(
+                <LineGraph
+                    {...makeProps({
+                        chartSettings: {
+                            showValuesOnSeries,
+                        },
+                    })}
+                />
+            )
 
-        let display = capturedConfig.options.plugins.datalabels.display
-        expect(display({ dataset: { data: [1234, 0] }, dataIndex: 0 })).toBe(false)
+            const display = capturedConfig.options.plugins.datalabels.display
 
-        cleanup()
-        capturedConfig = null
-
-        render(
-            <LineGraph
-                {...makeProps({
-                    chartSettings: {
-                        showValuesOnSeries: true,
-                    },
-                })}
-            />
-        )
-
-        display = capturedConfig.options.plugins.datalabels.display
-        expect(display({ dataset: { data: [1234, 0] }, dataIndex: 0 })).toBe('auto')
-        expect(display({ dataset: { data: [1234, 0] }, dataIndex: 1 })).toBe(false)
-    })
+            for (const { data, dataIndex, expected } of cases) {
+                expect(display({ dataset: { data }, dataIndex })).toBe(expected)
+            }
+        }
+    )
 
     it('formats datalabels using series formatting', () => {
         render(
