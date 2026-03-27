@@ -5,7 +5,8 @@ from functools import lru_cache
 from typing import Any, Union, cast
 
 from django.db import transaction
-from django.db.models import Count, F, Max, Prefetch, QuerySet
+from django.db.models import Count, F, Max, Prefetch, QuerySet, TextField
+from django.db.models.functions import Cast
 from django.db.models.query_utils import Q
 from django.http import HttpResponse
 from django.utils.text import slugify
@@ -1236,9 +1237,12 @@ class InsightViewSet(
                     queryset = queryset.filter(Q(saved=False))
             elif key == "feature_flag":
                 feature_flag = request.GET["feature_flag"]
-                queryset = queryset.filter(
-                    Q(filters__breakdown__icontains=f"$feature/{feature_flag}")
+                feature_flag_breakdown = f"$feature/{feature_flag}"
+                queryset = queryset.annotate(_ff_query_text=Cast("query", TextField())).filter(
+                    Q(filters__breakdown__icontains=feature_flag_breakdown)
                     | Q(filters__properties__icontains=feature_flag)
+                    | Q(_ff_query_text__icontains=feature_flag_breakdown)
+                    | Q(query__source__properties__icontains=feature_flag)
                 )
             elif key == "events":
                 events_filter = request.GET["events"]
