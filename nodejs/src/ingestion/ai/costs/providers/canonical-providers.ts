@@ -1,11 +1,12 @@
 // Auto-generated from OpenRouter API - Do not edit manually
-// Generated at: 2026-03-11 10:12:41 UTC
+// Generated at: 2026-03-25 20:08:23 UTC
 
 export type CanonicalProvider =
     | 'default'
     | 'ai21-fp8'
     | 'aion-labs'
     | 'aion-labs-bf16'
+    | 'akashml-fp8'
     | 'alibaba'
     | 'alibaba-opensource'
     | 'amazon-bedrock'
@@ -51,10 +52,8 @@ export type CanonicalProvider =
     | 'google-vertex-europe'
     | 'google-vertex-global'
     | 'google-vertex-us'
+    | 'google-vertex-us-east5'
     | 'groq'
-    | 'hyperbolic'
-    | 'hyperbolic-bf16'
-    | 'hyperbolic-fp8'
     | 'inception'
     | 'inceptron-fp8'
     | 'inceptron-int4'
@@ -62,6 +61,7 @@ export type CanonicalProvider =
     | 'inflection'
     | 'io-net-bf16'
     | 'io-net-fp16'
+    | 'io-net-int4'
     | 'ionstream-fp8'
     | 'liquid'
     | 'mancer-fp8'
@@ -78,6 +78,7 @@ export type CanonicalProvider =
     | 'morph'
     | 'nebius'
     | 'nebius-base'
+    | 'nebius-bf16'
     | 'nebius-fast'
     | 'nebius-fp4'
     | 'nebius-fp8'
@@ -103,6 +104,7 @@ export type CanonicalProvider =
     | 'parasail-int8'
     | 'perplexity'
     | 'phala'
+    | 'reka-bf16'
     | 'relace-bf16'
     | 'relace-fp8'
     | 'sambanova'

@@ -8,9 +8,9 @@ from posthog.api.test.test_team import EnvironmentToProjectRewriteClient, team_a
 from posthog.constants import AvailableFeature
 from posthog.models.organization import Organization, OrganizationMembership
 from posthog.models.person import Person
-from posthog.models.personal_api_key import PersonalAPIKey, hash_key_value
+from posthog.models.personal_api_key import PersonalAPIKey
 from posthog.models.project import Project
-from posthog.models.utils import generate_random_token_personal
+from posthog.models.utils import generate_random_token_personal, hash_key_value
 
 
 class TestProjectAPI(team_api_test_factory()):  # type: ignore
@@ -31,6 +31,7 @@ class TestProjectAPI(team_api_test_factory()):  # type: ignore
             last_used_at="2021-08-25T21:09:14",
             secure_value=hash_key_value(personal_api_key),
             scoped_organizations=[other_org.id],
+            scopes=["*"],
         )
 
         response = self.client.get("/api/projects/", headers={"authorization": f"Bearer {personal_api_key}"})

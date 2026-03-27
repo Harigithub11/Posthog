@@ -19,19 +19,22 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from temporalio.common import RetryPolicy, WorkflowIDConflictPolicy, WorkflowIDReusePolicy
 from temporalio.exceptions import WorkflowAlreadyStartedError
-
-from posthog.schema import EmbeddingModelName
+from temporalio.service import RPCError, RPCStatusCode
 
 from posthog.hogql import ast
 from posthog.hogql.query import execute_hogql_query
 
 from posthog.api.routing import TeamAndOrgViewSetMixin
-from posthog.auth import OAuthAccessTokenAuthentication, PersonalAPIKeyAuthentication
+from posthog.auth import InternalAPIAuthentication, OAuthAccessTokenAuthentication, PersonalAPIKeyAuthentication
+from posthog.clickhouse.query_tagging import Feature, Product, tag_queries
+from posthog.models import Team
 from posthog.permissions import APIScopePermission
 from posthog.temporal.ai.video_segment_clustering.constants import clustering_workflow_id
 from posthog.temporal.ai.video_segment_clustering.models import ClusteringWorkflowInputs
 from posthog.temporal.common.client import sync_connect
 
+from products.data_warehouse.backend.data_load.service import trigger_external_data_workflow
+from products.data_warehouse.backend.models.external_data_schema import ExternalDataSchema
 from products.signals.backend.api import emit_signal
 from products.signals.backend.models import (
     InvalidStatusTransition,
@@ -50,10 +53,9 @@ from products.signals.backend.temporal.types import (
     SignalReportDeletionWorkflowInputs,
     SignalReportReingestionWorkflowInputs,
 )
+from products.signals.backend.utils import EMBEDDING_MODEL
 
 logger = logging.getLogger(__name__)
-
-EMBEDDING_MODEL = EmbeddingModelName.TEXT_EMBEDDING_3_SMALL_1536
 
 
 class EmitSignalSerializer(serializers.Serializer):
@@ -84,6 +86,48 @@ class SignalViewSet(TeamAndOrgViewSetMixin, viewsets.ViewSet):
             source_product=data["source_product"],
             source_type=data["source_type"],
             source_id=str(uuid.uuid4()),
+            description=data["description"],
+            weight=data["weight"],
+            extra=data["extra"],
+        )
+
+        return Response({"status": "ok"}, status=status.HTTP_202_ACCEPTED)
+
+
+class InternalEmitSignalSerializer(serializers.Serializer):
+    source_product = serializers.CharField(max_length=100)
+    source_type = serializers.CharField(max_length=100)
+    source_id = serializers.CharField(max_length=512)
+    description = serializers.CharField()
+    weight = serializers.FloatField(default=0.5, min_value=0.0, max_value=1.0)
+    extra = serializers.DictField(required=False, default=dict)
+
+
+class InternalSignalViewSet(viewsets.ViewSet):
+    """
+    Internal-only endpoint for service-to-service signal emission (e.g. from cymbal).
+    Authenticated via X-Internal-Api-Secret header, not exposed to external ingress.
+    """
+
+    authentication_classes = [InternalAPIAuthentication]
+
+    @extend_schema(exclude=True)
+    def emit(self, request: Request, team_id: str, *args, **kwargs):
+        try:
+            team = Team.objects.get(id=int(team_id))
+        except (Team.DoesNotExist, ValueError):
+            return Response({"error": "Team not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = InternalEmitSignalSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        data = serializer.validated_data
+
+        async_to_sync(emit_signal)(
+            team=team,
+            source_product=data["source_product"],
+            source_type=data["source_type"],
+            source_id=data["source_id"],
             description=data["description"],
             weight=data["weight"],
             extra=data["extra"],
@@ -128,12 +172,69 @@ class SignalSourceConfigViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
             logger.exception(f"Failed to start initial clustering workflow for team {self.team_id}")
 
     def perform_update(self, serializer):
+        instance = cast(SignalSourceConfig, serializer.instance)
+        was_enabled = instance.enabled
         try:
-            serializer.save()
+            instance = serializer.save()
         except IntegrityError:
             raise serializers.ValidationError(
                 {"source_product": "A configuration for this source product and type already exists for this team."}
             )
+
+        if instance.enabled and not was_enabled:
+            if instance.source_type == SignalSourceConfig.SourceType.SESSION_ANALYSIS_CLUSTER:
+                self._trigger_initial_clustering(instance)
+            else:
+                self._trigger_data_import_sync(instance)
+        elif not instance.enabled and was_enabled:
+            if instance.source_type == SignalSourceConfig.SourceType.SESSION_ANALYSIS_CLUSTER:
+                self._cancel_clustering_workflow(instance)
+
+    def _cancel_clustering_workflow(self, config: SignalSourceConfig) -> None:
+        """Cancel the running clustering workflow for the team, if any."""
+        workflow_id = clustering_workflow_id(self.team_id, config.id)
+        try:
+            client = sync_connect()
+            handle = client.get_workflow_handle(workflow_id)
+            async_to_sync(handle.cancel)()
+            logger.info("Cancelled clustering workflow for team %s", self.team_id)
+        except RPCError as e:
+            if e.status == RPCStatusCode.NOT_FOUND:
+                return
+            logger.exception("Failed to cancel clustering workflow for team %s", self.team_id)
+        except Exception:
+            logger.exception("Failed to cancel clustering workflow for team %s", self.team_id)
+
+    # Maps source_product to ExternalDataSourceType value for data import sources
+    _DATA_IMPORT_SOURCE_TYPE_MAP: dict[str, str] = {
+        SignalSourceConfig.SourceProduct.GITHUB: "Github",
+        SignalSourceConfig.SourceProduct.LINEAR: "Linear",
+        SignalSourceConfig.SourceProduct.ZENDESK: "Zendesk",
+    }
+
+    def _trigger_data_import_sync(self, config: SignalSourceConfig) -> None:
+        """Fire-and-forget sync trigger for data import signal sources."""
+        ext_source_type = self._DATA_IMPORT_SOURCE_TYPE_MAP.get(config.source_product)
+        if ext_source_type is None:
+            return
+
+        schemas = (
+            ExternalDataSchema.objects.filter(
+                team_id=self.team_id,
+                source__source_type=ext_source_type,
+                should_sync=True,
+            )
+            .exclude(source__deleted=True)
+            .select_related("source")
+        )
+        for schema in schemas:
+            try:
+                trigger_external_data_workflow(schema)
+                logger.info("Triggered data import sync for %s schema %s", config.source_product, schema.id)
+            except Exception:
+                logger.exception(
+                    "Failed to trigger data import sync for %s schema %s", config.source_product, schema.id
+                )
 
 
 @extend_schema_view(
@@ -176,10 +277,6 @@ class SignalReportViewSet(
 
     def destroy(self, request, *args, **kwargs):
         """Soft-delete a report and its signals via the deletion workflow."""
-        # TODO - I'm not sure about this - part of me feels like deletion should be sync, but it
-        # kind of can't be. We could pre-emptively delete the report, so it doesn't show up in the
-        # list, and then wrap the whole rest of the deletion workflow in a try-catch that undeletes
-        # the report on failure. Idk - not sure. For no, I think this is good enough.
         report = cast(SignalReport, self.get_object())
         report_id = str(report.id)
         team_id = self.team.id
@@ -202,6 +299,10 @@ class SignalReportViewSet(
                 {"error": "Failed to start deletion workflow."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+        # Hide the report from the list immediately while signal deletion continues asynchronously.
+        updated_fields = report.transition_to(SignalReport.Status.DELETED)
+        report.save(update_fields=updated_fields)
 
         return Response({"status": "deletion_started", "report_id": report_id}, status=status.HTTP_202_ACCEPTED)
 
@@ -233,7 +334,7 @@ class SignalReportViewSet(
                 document_id,
                 content,
                 metadata,
-                toString(timestamp) as timestamp
+                timestamp
             FROM (
                 SELECT
                     document_id,
@@ -251,6 +352,7 @@ class SignalReportViewSet(
             ORDER BY timestamp ASC
         """
 
+        tag_queries(product=Product.SIGNALS, feature=Feature.USAGE_REPORT)
         result = execute_hogql_query(
             query_type="SignalsDebugFetchForReport",
             query=query,

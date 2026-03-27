@@ -50,18 +50,16 @@ class WebhookSourceManager:
             id=self._inputs.schema_id, team_id=self._inputs.team_id
         )
 
-        if not schema.is_incremental or not schema.initial_sync_complete or self._inputs.reset_pipeline:
+        if not schema.is_webhook or not schema.initial_sync_complete or self._inputs.reset_pipeline:
             return False
 
         has_webhook_function = await database_sync_to_async_pool(
             HogFunction.objects.filter(
+                inputs__source_id__value=self._inputs.source_id,
                 team_id=self._inputs.team_id,
                 type="warehouse_source_webhook",
                 enabled=True,
                 deleted=False,
-                inputs__contains={
-                    "schema_id": {"value": str(self._inputs.schema_id)},
-                },
             ).exists
         )()
 

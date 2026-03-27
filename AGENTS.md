@@ -12,7 +12,6 @@
 - Environment:
   - Use flox when available — prefer `flox activate -- bash -c "<command>"` if commands fail
     - Never use `flox activate` in interactive sessions (it hangs if you try)
-  - If local hooks fail with missing Husky bootstrap files (for example `.husky/_/husky.sh`) or missing `lint-staged`, run `pnpm install --frozen-lockfile --filter=.` once in the repo root
 - Tests:
   - All tests: `pytest`
   - Single test: `pytest path/to/test.py::TestClass::test_method`
@@ -56,11 +55,19 @@ Examples:
 - `chore(ci): update GitHub Actions workflow`
 - `chore: update AGENTS.md instructions`
 
+### PR descriptions
+
+Follow the PR description template in `.github/pull_request_template.md` when creating or updating PR descriptions. Keep the descriptions of changes higher-level, focusing on key details for the human reviewer to evaluate the rationale for the approach, and the overall architecture.
+
 ### Rules
 
 - Scope is optional but encouraged when the change is specific to a feature area
 - Description should be lowercase and not end with a period
 - Keep the first line under 72 characters
+
+## CI / GitHub Actions
+
+- Every job in `.github/workflows/` must declare `timeout-minutes` — prevents stuck runners from burning credits indefinitely
 
 ## Security
 
@@ -95,6 +102,14 @@ See [.agents/security.md](.agents/security.md) for SQL, HogQL, and semgrep secur
 - Use American English spelling
 - When mentioning PostHog products, the product names should use Sentence casing, not Title Casing. For example, 'Product analytics', not 'Product Analytics'. Any other buttons, tab text, tooltips, etc should also all use Sentence casing. For example, 'Save as view' instead of 'Save As View'.
 
-## Skills
+## Agent automation
 
-Skills are created inside [.agents/skills](.agents/skills/) by default and then symlinked to [.claude/skills](.claude/skills). Make sure you always treat `.agents/skills` as the source of truth.
+Prefer these approaches in order:
+
+1. **AGENTS.md / CLAUDE.md instructions** — try this first
+2. **Skills** (`.agents/skills/`) — scaffold with `hogli init:skill`
+3. **lint-staged / husky** — file-level validation at commit time
+4. **CI checks** — PR-level enforcement
+5. **Linters** (ruff, oxlint, semgrep) — code pattern enforcement
+
+Claude Code hooks are reserved for environment bootstrapping (`SessionStart` only) — do not add `PreToolUse`, `PostToolUse`, or `Notification` hooks as they add latency and are fragile. Changes to `.claude/hooks/` trigger a lint-staged warning; changes to `.claude/settings.json` are blocked outright.

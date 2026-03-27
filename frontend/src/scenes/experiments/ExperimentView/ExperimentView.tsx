@@ -5,6 +5,7 @@ import { LemonTabs, LemonTag } from '@posthog/lemon-ui'
 
 import { ActivityLog } from 'lib/components/ActivityLog/ActivityLog'
 import { useFeatureFlag } from 'lib/hooks/useFeatureFlag'
+import { PendingChangeRequestBanner } from 'scenes/approvals/PendingChangeRequestBanner'
 import { EXPERIMENT_MIN_EXPOSURES_FOR_RESULTS } from 'scenes/experiments/constants'
 import { WebExperimentImplementationDetails } from 'scenes/experiments/WebExperimentImplementationDetails'
 
@@ -57,6 +58,7 @@ import { Info } from './Info'
 import { LegacyExperimentHeader } from './LegacyExperimentHeader'
 import { Overview } from './Overview'
 import { ReleaseConditionsModal, ReleaseConditionsTable } from './ReleaseConditionsTable'
+import { ResultsNotificationBanner } from './ResultsNotificationBanner'
 import { SettingsTab } from './SettingsTab'
 import { SummaryTable } from './SummaryTable'
 
@@ -121,6 +123,7 @@ const MetricsTab = (): JSX.Element => {
 
     return (
         <>
+            <ResultsNotificationBanner />
             {usesNewQueryRunner && !isAiAnalysisTabEnabled && (
                 <div className="mt-1 mb-4 flex justify-start gap-2">
                     <SummarizeExperimentButton
@@ -279,6 +282,13 @@ export function ExperimentView({ tabId }: Pick<ExperimentSceneLogicProps, 'tabId
             ) : (
                 <>
                     <ExperimentWarningBanner />
+                    {experiment.feature_flag?.id && (
+                        <PendingChangeRequestBanner
+                            resourceType="feature_flag"
+                            resourceId={experiment.feature_flag.id}
+                            context="experiment"
+                        />
+                    )}
                     {usesNewQueryRunner ? <Info tabId={tabId} /> : <LegacyExperimentInfo />}
                     {usesNewQueryRunner ? <ExperimentHeader /> : <LegacyExperimentHeader />}
                     <LemonTabs

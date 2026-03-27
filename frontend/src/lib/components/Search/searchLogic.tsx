@@ -50,6 +50,8 @@ export interface SearchLogicProps {
 }
 
 export const RECENTS_LIMIT = 5
+/** Max starred shortcuts shown in quick search (folders excluded). */
+export const STARRED_LIMIT = 20
 const SEARCH_LIMIT = 5
 
 export const searchLogic = kea<searchLogicType>([
@@ -98,6 +100,20 @@ export const searchLogic = kea<searchLogicType>([
                         results: response.results.slice(0, RECENTS_LIMIT),
                         hasMore: response.results.length > RECENTS_LIMIT,
                     }
+                },
+            },
+        ],
+        starredShortcuts: [
+            [] as FileSystemEntry[],
+            {
+                loadStarredShortcuts: async (_, breakpoint) => {
+                    const response = await api.fileSystemShortcuts.list({
+                        ordering: '-created_at',
+                        limit: STARRED_LIMIT * 2,
+                    })
+                    breakpoint()
+                    // Server orders by created_at; over-fetch so we still have ~STARRED_LIMIT after dropping folders.
+                    return response.results.filter((e) => e.type !== 'folder').slice(0, STARRED_LIMIT)
                 },
             },
         ],
@@ -221,6 +237,13 @@ export const searchLogic = kea<searchLogicType>([
                 loadRecentsFailure: () => true,
             },
         ],
+        starredHasLoaded: [
+            false,
+            {
+                loadStarredShortcutsSuccess: () => true,
+                loadStarredShortcutsFailure: () => true,
+            },
+        ],
         sceneLogViewsHasLoaded: [
             false,
             {
@@ -296,6 +319,24 @@ export const searchLogic = kea<searchLogicType>([
                 })
             },
         ],
+        starredItems: [
+            (s) => [s.starredShortcuts],
+            (starredShortcuts): SearchItem[] => {
+                return starredShortcuts.map((item) => {
+                    const name = splitPath(item.path).pop()
+                    return {
+                        id: `starred-${item.id}`,
+                        name: name ? unescapePath(name) : item.path,
+                        category: 'starred',
+                        href: item.href || '#',
+                        lastViewedAt: item.last_viewed_at ?? null,
+                        itemType: item.type ?? null,
+                        searchKeywords: ['starred', 'favorite', 'favourite', 'shortcut'],
+                        record: item as unknown as Record<string, unknown>,
+                    }
+                })
+            },
+        ],
         appsItems: [
             (s) => [s.featureFlags, s.isDev, s.sceneLogViewsByRef],
             (featureFlags, isDev, sceneLogViewsByRef): SearchItem[] => {
@@ -329,26 +370,41 @@ export const searchLogic = kea<searchLogicType>([
                         iconColor: product.iconColor,
                     },
                 }))
-
-                // Add Activity manually
-                const activityHref = urls.activity(ActivityTab.ExploreEvents)
-                items.push({
-                    id: 'app-activity',
-                    name: 'Activity',
-                    displayName: 'Activity',
-                    category: 'apps',
-                    productCategory: null,
-                    href: activityHref,
-                    icon: <IconClock />,
-                    itemType: null,
-                    tags: undefined,
-                    lastViewedAt: sceneLogViewsByRef['Activity'] ?? null,
-                    record: {
-                        type: 'activity',
-                        iconType: undefined,
-                        iconColor: undefined,
+                items.push(
+                    {
+                        id: 'app-activity',
+                        name: 'Activity',
+                        displayName: 'Activity',
+                        category: 'apps',
+                        productCategory: null,
+                        href: urls.activity(ActivityTab.ExploreEvents),
+                        icon: <IconClock />,
+                        itemType: null,
+                        tags: undefined,
+                        lastViewedAt: sceneLogViewsByRef['Activity'] ?? null,
+                        record: {
+                            type: 'activity',
+                            iconType: undefined,
+                            iconColor: undefined,
+                        },
                     },
-                })
+                    {
+                        id: 'app-cohorts',
+                        name: 'Cohorts',
+                        displayName: 'Cohorts',
+                        category: 'apps',
+                        productCategory: null,
+                        href: urls.cohorts(),
+                        itemType: 'cohort',
+                        tags: undefined,
+                        lastViewedAt: sceneLogViewsByRef['Cohorts'] ?? null,
+                        record: {
+                            type: 'cohort',
+                            iconType: 'cohort',
+                            iconColor: undefined,
+                        },
+                    }
+                )
 
                 // Sort by lastViewedAt (most recent first), items without lastViewedAt go to the end
                 return items.sort((a, b) => {
@@ -668,6 +724,11 @@ export const searchLogic = kea<searchLogicType>([
 
                 const categoryItems: Record<string, SearchItem[]> = {}
 
+                // Safely extract a string field from extra_fields — the API may return
+                // non-string values (objects, arrays) which would crash React if rendered.
+                const safeField = (field: unknown): string | undefined =>
+                    typeof field === 'string' ? field : undefined
+
                 for (const result of unifiedSearchResults.results) {
                     const category = result.type
                     if (!categoryItems[category]) {
@@ -679,51 +740,51 @@ export const searchLogic = kea<searchLogicType>([
 
                     switch (result.type) {
                         case 'insight':
-                            name = (result.extra_fields.name as string) || result.result_id
+                            name = safeField(result.extra_fields.name) || result.result_id
                             href = `/insights/${result.result_id}`
                             break
                         case 'dashboard':
-                            name = (result.extra_fields.name as string) || result.result_id
+                            name = safeField(result.extra_fields.name) || result.result_id
                             href = `/dashboard/${result.result_id}`
                             break
                         case 'feature_flag':
-                            name = (result.extra_fields.key as string) || result.result_id
+                            name = safeField(result.extra_fields.key) || result.result_id
                             href = `/feature_flags/${result.result_id}`
                             break
                         case 'experiment':
-                            name = (result.extra_fields.name as string) || result.result_id
+                            name = safeField(result.extra_fields.name) || result.result_id
                             href = `/experiments/${result.result_id}`
                             break
                         case 'early_access_feature':
-                            name = (result.extra_fields.name as string) || result.result_id
+                            name = safeField(result.extra_fields.name) || result.result_id
                             href = `/early_access_features/${result.result_id}`
                             break
                         case 'hog_flow':
-                            name = (result.extra_fields.name as string) || result.result_id
+                            name = safeField(result.extra_fields.name) || result.result_id
                             href = `/workflows/${result.result_id}/workflow`
                             break
                         case 'survey':
-                            name = (result.extra_fields.name as string) || result.result_id
+                            name = safeField(result.extra_fields.name) || result.result_id
                             href = `/surveys/${result.result_id}`
                             break
                         case 'notebook':
-                            name = (result.extra_fields.title as string) || result.result_id
+                            name = safeField(result.extra_fields.title) || result.result_id
                             href = `/notebooks/${result.result_id}`
                             break
                         case 'cohort':
-                            name = (result.extra_fields.name as string) || result.result_id
+                            name = safeField(result.extra_fields.name) || result.result_id
                             href = `/cohorts/${result.result_id}`
                             break
                         case 'action':
-                            name = (result.extra_fields.name as string) || result.result_id
+                            name = safeField(result.extra_fields.name) || result.result_id
                             href = `/data-management/actions/${result.result_id}`
                             break
                         case 'event_definition':
-                            name = (result.extra_fields.name as string) || result.result_id
+                            name = safeField(result.extra_fields.name) || result.result_id
                             href = `/data-management/events/${result.result_id}`
                             break
                         case 'property_definition':
-                            name = (result.extra_fields.name as string) || result.result_id
+                            name = safeField(result.extra_fields.name) || result.result_id
                             href = `/data-management/properties/${result.result_id}`
                             break
                     }
@@ -750,6 +811,8 @@ export const searchLogic = kea<searchLogicType>([
                 s.unifiedSearchResultsLoading,
                 s.recentsLoading,
                 s.recentsHasLoaded,
+                s.starredShortcutsLoading,
+                s.starredHasLoaded,
                 s.isAppsLoading,
                 s.personSearchResultsLoading,
                 s.groupSearchResultsLoading,
@@ -759,6 +822,8 @@ export const searchLogic = kea<searchLogicType>([
                 unifiedSearchResultsLoading: boolean,
                 recentsLoading: boolean,
                 recentsHasLoaded: boolean,
+                starredShortcutsLoading: boolean,
+                starredHasLoaded: boolean,
                 isAppsLoading: boolean,
                 personSearchResultsLoading: boolean,
                 groupSearchResultsLoading: boolean,
@@ -767,6 +832,8 @@ export const searchLogic = kea<searchLogicType>([
                 unifiedSearchResultsLoading,
                 recentsLoading,
                 recentsHasLoaded,
+                starredLoading: starredShortcutsLoading,
+                starredHasLoaded,
                 isAppsLoading,
                 personSearchResultsLoading,
                 groupSearchResultsLoading,
@@ -776,6 +843,7 @@ export const searchLogic = kea<searchLogicType>([
         allCategories: [
             (s) => [
                 s.recentItems,
+                s.starredItems,
                 s.appsItems,
                 s.dataManagementItems,
                 s.healthItems,
@@ -791,6 +859,7 @@ export const searchLogic = kea<searchLogicType>([
             ],
             (
                 recentItems: SearchItem[],
+                starredItems: SearchItem[],
                 appsItems: SearchItem[],
                 dataManagementItems: SearchItem[],
                 healthItems: SearchItem[],
@@ -805,6 +874,8 @@ export const searchLogic = kea<searchLogicType>([
                     unifiedSearchResultsLoading: boolean
                     recentsLoading: boolean
                     recentsHasLoaded: boolean
+                    starredLoading: boolean
+                    starredHasLoaded: boolean
                     isAppsLoading: boolean
                     personSearchResultsLoading: boolean
                     groupSearchResultsLoading: boolean
@@ -816,6 +887,8 @@ export const searchLogic = kea<searchLogicType>([
                     unifiedSearchResultsLoading,
                     recentsLoading,
                     recentsHasLoaded,
+                    starredLoading,
+                    starredHasLoaded,
                     isAppsLoading,
                     personSearchResultsLoading,
                     groupSearchResultsLoading,
@@ -857,6 +930,13 @@ export const searchLogic = kea<searchLogicType>([
                     key: 'recents',
                     items: recentItems,
                     isLoading: isRecentsLoading,
+                })
+
+                const isStarredLoading = starredLoading || !starredHasLoaded
+                categories.push({
+                    key: 'starred',
+                    items: starredItems,
+                    isLoading: isStarredLoading,
                 })
 
                 // Filter apps and data management by search
@@ -1026,6 +1106,9 @@ export const searchLogic = kea<searchLogicType>([
             if (search.trim() === '' || !values.recentsHasLoaded) {
                 actions.loadRecents({ search: '' })
             }
+            if (search.trim() === '' || !values.starredHasLoaded) {
+                actions.loadStarredShortcuts(undefined)
+            }
 
             if (search.trim() !== '') {
                 actions.loadUnifiedSearchResults({ searchTerm: search })
@@ -1038,6 +1121,9 @@ export const searchLogic = kea<searchLogicType>([
             // Load recents only when modal opens, not on mount
             if (values.recents.results.length === 0) {
                 actions.loadRecents({ search: '' })
+            }
+            if (!values.starredHasLoaded) {
+                actions.loadStarredShortcuts(undefined)
             }
             // Load scene log views for app last viewed timestamps
             if (values.sceneLogViews.length === 0) {

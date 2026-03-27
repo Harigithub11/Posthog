@@ -379,6 +379,7 @@ export enum AssistantEventType {
     Notebook = 'notebook',
     Update = 'update',
     Approval = 'approval',
+    Sandbox = 'sandbox',
 }
 
 export interface AssistantUpdateEvent {
@@ -475,7 +476,6 @@ export type AssistantTool =
     | 'upsert_alert'
     | 'finalize_plan'
     | 'call_mcp_server'
-    | 'recommend_products'
     | 'search_llm_traces'
     | 'run_hog_eval_test'
 
@@ -487,10 +487,10 @@ export enum AgentMode {
     Plan = 'plan',
     Execution = 'execution',
     Survey = 'survey',
-    Onboarding = 'onboarding',
     Research = 'research',
     Flags = 'flags',
     LLMAnalytics = 'llm_analytics',
+    Sandbox = 'sandbox',
 }
 
 export enum SlashCommandName {
