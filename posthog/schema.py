@@ -5629,6 +5629,7 @@ class ChartSettings(BaseModel):
     showLegend: bool | None = None
     showNullsAsZero: bool | None = None
     showTotalRow: bool | None = None
+    showValuesOnSeries: bool | None = None
     showXAxisBorder: bool | None = None
     showXAxisTicks: bool | None = None
     showYAxisBorder: bool | None = None

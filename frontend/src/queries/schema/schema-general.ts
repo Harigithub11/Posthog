@@ -1111,6 +1111,7 @@ export interface ChartSettings {
     showLegend?: boolean
     showTotalRow?: boolean
     showNullsAsZero?: boolean
+    showValuesOnSeries?: boolean
     heatmap?: HeatmapSettings
 }
 
