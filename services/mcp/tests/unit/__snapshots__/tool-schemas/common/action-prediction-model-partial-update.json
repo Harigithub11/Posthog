@@ -1,0 +1,29 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+        "artifact_scripts": {
+            "description": "Self-contained scripts for this run. Keys: query (HogQL), utils (API helpers), train (training script), predict (scoring script)."
+        },
+        "feature_importance": {
+            "description": "Feature importance scores from model training."
+        },
+        "id": {
+            "description": "A UUID string identifying this action prediction model.",
+            "type": "string"
+        },
+        "metrics": {
+            "description": "Model evaluation metrics (e.g. accuracy, AUC, F1)."
+        },
+        "model_url": {
+            "description": "S3 storage path to the serialized model artifact.",
+            "maxLength": 2000,
+            "type": "string"
+        },
+        "notes": {
+            "description": "Agent lab notebook: what was tried, what was observed, what to try next.",
+            "type": "string"
+        }
+    },
+    "required": ["id"],
+    "type": "object"
+}

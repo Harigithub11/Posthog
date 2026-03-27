@@ -83,7 +83,7 @@ from products.messaging.backend.api.message_preferences import MessagePreference
 from products.messaging.backend.api.message_templates import MessageTemplatesViewSet
 from products.notebooks.backend.api.notebook import NotebookViewSet
 from products.notifications.backend.presentation.views import NotificationsViewSet
-from products.posthog_ai.backend.api import MCPToolsViewSet
+from products.posthog_ai.backend.api import ActionPredictionConfigViewSet, ActionPredictionModelViewSet, MCPToolsViewSet
 from products.product_tours.backend.api import ProductTourViewSet
 from products.signals.backend.views import SignalViewSet
 from products.tracing.backend.presentation.views import SpansViewSet as TracingSpansViewSet
@@ -1362,6 +1362,20 @@ environments_router.register(
     r"mcp_tools",
     MCPToolsViewSet,
     "environment_mcp_tools",
+    ["team_id"],
+)
+
+environments_router.register(
+    r"action_prediction_configs",
+    ActionPredictionConfigViewSet,
+    "environment_action_prediction_configs",
+    ["team_id"],
+)
+
+environments_router.register(
+    r"action_prediction_models",
+    ActionPredictionModelViewSet,
+    "environment_action_prediction_models",
     ["team_id"],
 )
 

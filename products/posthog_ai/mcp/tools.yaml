@@ -1,0 +1,219 @@
+# MCP tool definition — tool entries are scaffolded from the OpenAPI schema.
+# The tool list and operation IDs are kept in sync automatically:
+#   pnpm --filter=@posthog/mcp run scaffold-yaml -- --sync-all
+#
+# To enable a tool, set enabled: true and add required scopes + annotations.
+# All other fields (title, description, enrich_url, etc.) are yours to configure.
+category: AI
+feature: action_prediction_models
+url_prefix: /action_prediction_configs
+tools:
+    action-prediction-config-list:
+        operation: action_prediction_configs_list
+        enabled: true
+        scopes:
+            - action_prediction_model:read
+        annotations:
+            readOnly: true
+            destructive: false
+            idempotent: true
+        list: true
+        title: List action prediction configs
+        description: >
+            List all action prediction configs in the current project. Returns name, action or event
+            reference, lookback period, training status, and creation metadata. Use retrieve for the full
+            description.
+
+    action-prediction-config-retrieve:
+        operation: action_prediction_configs_retrieve
+        enabled: true
+        scopes:
+            - action_prediction_model:read
+        annotations:
+            readOnly: true
+            destructive: false
+            idempotent: true
+        title: Get action prediction config
+        description: >
+            Retrieve a single action prediction config by ID. Returns name, description, action or event
+            reference, lookback period, training status, and creation metadata.
+    action-prediction-config-create:
+        operation: action_prediction_configs_create
+        enabled: true
+        scopes:
+            - action_prediction_model:write
+        annotations:
+            readOnly: false
+            destructive: false
+            idempotent: false
+        enrich_url: '{id}'
+        title: Create action prediction config
+        description: >
+            Create a new action prediction config. Specify either an action ID or an event name (not both), and a
+            lookback period in days. After creating a config, you must train a model before predictions
+            can be made. Use the training-action-predictions skill to run the full training loop. Training
+            is a multi-step process — do not stop after creating the config. Re-iterate through data
+            discovery, feature engineering, and the experiment loop, then wait until a winning model is
+            recorded before moving on to scoring.
+        include_params:
+            - name
+            - description
+            - action
+            - event_name
+            - lookback_days
+    action-prediction-config-partial-update:
+        operation: action_prediction_configs_partial_update
+        enabled: true
+        scopes:
+            - action_prediction_model:write
+        annotations:
+            readOnly: false
+            destructive: false
+            idempotent: true
+        enrich_url: '{id}'
+        title: Update action prediction config
+        description: >
+            Update an action prediction config by ID. Can modify name,
+            description, the action or event reference, lookback period,
+            and the winning model reference.
+        include_params:
+            - name
+            - description
+            - action
+            - event_name
+            - lookback_days
+            - winning_model
+    action-prediction-config-update:
+        operation: action_prediction_configs_update
+        enabled: false
+    action-prediction-config-destroy:
+        operation: action_prediction_configs_destroy
+        enabled: true
+        scopes:
+            - action_prediction_model:write
+        annotations:
+            readOnly: false
+            destructive: true
+            idempotent: true
+        title: Delete action prediction config
+        description: >
+            Permanently delete an action prediction config by ID.
+    action-prediction-config-upload-url:
+        operation: action_prediction_configs_upload_url_create
+        enabled: true
+        scopes:
+            - action_prediction_model:write
+        annotations:
+            readOnly: false
+            destructive: false
+            idempotent: false
+        title: Generate model artifact upload URL
+        description: >
+            Generate a presigned S3 upload URL for a model artifact. Returns a
+            URL and form fields for direct upload to S3, plus a storage_path to
+            use as model_url when creating an ActionPredictionModel. Each
+            call produces a unique storage path, so call once per artifact.
+        param_overrides:
+            filename:
+                description: >
+                    Name of the file to upload, e.g. "xgboost_v1.pkl".
+    action-prediction-model-list:
+        operation: action_prediction_models_list
+        enabled: true
+        scopes:
+            - action_prediction_model:read
+        annotations:
+            readOnly: true
+            destructive: false
+            idempotent: true
+        list: true
+        title: List prediction models
+        description: >
+            List trained prediction models, newest first. Returns S3 model URL and
+            evaluation metrics. Use retrieve for feature importance, artifact scripts, and notes.
+
+    action-prediction-model-retrieve:
+        operation: action_prediction_models_retrieve
+        enabled: true
+        scopes:
+            - action_prediction_model:read
+        annotations:
+            readOnly: true
+            destructive: false
+            idempotent: true
+        title: Get prediction model
+        description: >
+            Retrieve a single trained prediction model by ID. Returns config reference,
+            S3 model URL, evaluation metrics, feature importance, artifact scripts, and experiment notes.
+    action-prediction-model-create:
+        operation: action_prediction_models_create
+        enabled: true
+        scopes:
+            - action_prediction_model:write
+        annotations:
+            readOnly: false
+            destructive: false
+            idempotent: false
+        enrich_url: '{id}'
+        title: Create prediction model
+        description: >
+            Record a new trained prediction model. Provide the parent config ID, S3 storage path
+            (from action-prediction-config-upload-url's storage_path field, NOT the presigned URL),
+            evaluation metrics, feature importance scores, and artifact scripts. The model_download_url
+            field in the response provides a fresh presigned download URL.
+        include_params:
+            - config
+            - experiment_id
+            - model_url
+            - metrics
+            - feature_importance
+            - artifact_scripts
+            - notes
+    action-prediction-model-partial-update:
+        operation: action_prediction_models_partial_update
+        enabled: true
+        scopes:
+            - action_prediction_model:write
+        annotations:
+            readOnly: false
+            destructive: false
+            idempotent: true
+        enrich_url: '{id}'
+        title: Update prediction model
+        description: >
+            Update a prediction model by ID. Can change model URL,
+            metrics, feature importance, artifact scripts, or notes.
+        include_params:
+            - model_url
+            - metrics
+            - feature_importance
+            - artifact_scripts
+            - notes
+    action-prediction-model-predict:
+        operation: action_prediction_models_predict_create
+        enabled: true
+        scopes:
+            - action_prediction_model:write
+        annotations:
+            readOnly: false
+            destructive: false
+            idempotent: false
+        title: Run prediction task with trained model
+        description: >
+            Run a prediction task using a trained model. Creates a sandboxed background
+            agent that has access to the model's artifact_scripts (predict script, utils,
+            query) and executes the instructions in the prompt. Use for scoring users,
+            running simulations, or any prediction task. The model must have a model_url
+            and artifact_scripts with a predict key. Returns the model with the new
+            task_run attached so you can track status.
+        include_params:
+            - prompt
+    action-prediction-model-update:
+        operation: action_prediction_models_update
+        enabled: false
+    action-prediction-model-destroy:
+        operation: action_prediction_models_destroy
+        enabled: false
+    mcp-tools-create:
+        operation: mcp_tools_create
+        enabled: false

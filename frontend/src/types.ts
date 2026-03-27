@@ -5107,6 +5107,8 @@ export interface RoleMemberType {
 export type APIScopeObject =
     | 'action'
     | 'access_control'
+    | 'action_prediction'
+    | 'action_prediction_model'
     | 'activity_log'
     | 'alert'
     | 'annotation'

@@ -1,0 +1,29 @@
+{
+    "metrics": {
+        "auc_roc": 0.8447,
+        "auc_pr": 0.7571,
+        "brier": 0.1565,
+        "n_train": 37500,
+        "n_test": 12500,
+        "n_positive": 19549,
+        "n_negative": 30451,
+        "neg_ratio": 5.0,
+        "base_rate": 0.391,
+        "signal_quality": "green"
+    },
+    "feature_importance": {
+        "days_since_last_ui_event": 0.2506,
+        "ui_week_1": 0.2411,
+        "weeks_active": 0.1147,
+        "active_days": 0.1034,
+        "recent_vs_earlier_ratio": 0.0589,
+        "ui_week_2": 0.0381,
+        "ui_events_total": 0.034,
+        "ui_week_3": 0.0286,
+        "ui_week_8": 0.0283,
+        "ui_week_4": 0.0268,
+        "ui_week_5": 0.0259,
+        "ui_week_7": 0.0258,
+        "ui_week_6": 0.0236
+    }
+}

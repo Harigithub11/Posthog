@@ -587,6 +587,166 @@ export namespace Schemas {
       actionId: number;
     }
 
+    export interface ActionPredictionConfig {
+      readonly id: string;
+      /**
+       * Human-readable name for the prediction config.
+       * @maxLength 400
+       */
+      name?: string;
+      /** Longer description of the prediction config's purpose. */
+      description?: string;
+      /**
+       * ID of the PostHog action to predict. Mutually exclusive with event_name.
+       * @nullable
+       */
+      action?: number | null;
+      /**
+       * Name of the raw event to predict. Mutually exclusive with action.
+       * @maxLength 400
+       * @nullable
+       */
+      event_name?: string | null;
+      /**
+       * Number of days to look back for prediction data.
+       * @minimum 1
+       */
+      lookback_days: number;
+      /**
+       * Sandbox task run that trains this prediction config.
+       * @nullable
+       */
+      readonly task_run: string | null;
+      /**
+       * The current winning model. Set by the agent after the experiment loop.
+       * @nullable
+       */
+      winning_model?: string | null;
+      /**
+       * Current training status: not_started, queued, in_progress, completed, failed, cancelled, or null if no training run.
+       * @nullable
+       */
+      readonly training_status: string | null;
+      readonly created_by: UserBasic;
+      readonly created_at: string;
+      /** @nullable */
+      readonly updated_at: string | null;
+    }
+
+    export interface ActionPredictionConfigList {
+      readonly id: string;
+      /**
+       * Human-readable name for the prediction config.
+       * @maxLength 400
+       */
+      name?: string;
+      /**
+       * ID of the PostHog action to predict. Mutually exclusive with event_name.
+       * @nullable
+       */
+      action?: number | null;
+      /**
+       * Name of the raw event to predict. Mutually exclusive with action.
+       * @maxLength 400
+       * @nullable
+       */
+      event_name?: string | null;
+      /**
+       * Number of days to look back for prediction data.
+       * @minimum 1
+       */
+      lookback_days: number;
+      /**
+       * Sandbox task run that trains this prediction config.
+       * @nullable
+       */
+      readonly task_run: string | null;
+      /**
+       * The current winning model. Set by the agent after the experiment loop.
+       * @nullable
+       */
+      winning_model?: string | null;
+      /**
+       * Current training status: not_started, queued, in_progress, completed, failed, cancelled, or null if no training run.
+       * @nullable
+       */
+      readonly training_status: string | null;
+      readonly created_by: UserBasic;
+      readonly created_at: string;
+      /** @nullable */
+      readonly updated_at: string | null;
+    }
+
+    export interface ActionPredictionModel {
+      readonly id: string;
+      config: string;
+      /**
+       * Groups runs from the same agent experiment session.
+       * @nullable
+       */
+      experiment_id?: string | null;
+      /**
+       * S3 storage path to the serialized model artifact.
+       * @maxLength 2000
+       */
+      model_url: string;
+      /** Model evaluation metrics (e.g. accuracy, AUC, F1). */
+      metrics?: unknown;
+      /** Feature importance scores from model training. */
+      feature_importance?: unknown;
+      /** Self-contained scripts for this run. Keys: query (HogQL), utils (API helpers), train (training script), predict (scoring script). */
+      artifact_scripts?: unknown;
+      /** Agent lab notebook: what was tried, what was observed, what to try next. */
+      notes?: string;
+      /**
+       * Specific task run that produced this model.
+       * @nullable
+       */
+      readonly task_run: string | null;
+      /**
+       * Current prediction status: not_started, queued, in_progress, completed, failed, cancelled, or null if no prediction run.
+       * @nullable
+       */
+      readonly prediction_status: string | null;
+      /** User who created this model. */
+      readonly created_by: UserBasic | null;
+      readonly created_at: string;
+      /** @nullable */
+      readonly updated_at: string | null;
+    }
+
+    export interface ActionPredictionModelList {
+      readonly id: string;
+      config: string;
+      /**
+       * Groups runs from the same agent experiment session.
+       * @nullable
+       */
+      experiment_id?: string | null;
+      /**
+       * S3 storage path to the serialized model artifact.
+       * @maxLength 2000
+       */
+      model_url: string;
+      /** Model evaluation metrics (e.g. accuracy, AUC, F1). */
+      metrics?: unknown;
+      /**
+       * Specific task run that produced this model.
+       * @nullable
+       */
+      readonly task_run: string | null;
+      /**
+       * Current prediction status: not_started, queued, in_progress, completed, failed, cancelled, or null if no prediction run.
+       * @nullable
+       */
+      readonly prediction_status: string | null;
+      /** User who created this model. */
+      readonly created_by: UserBasic | null;
+      readonly created_at: string;
+      /** @nullable */
+      readonly updated_at: string | null;
+    }
+
     export type ActionsNodeKind = typeof ActionsNodeKind[keyof typeof ActionsNodeKind];
 
 
@@ -18624,6 +18784,24 @@ export namespace Schemas {
       results: Action[];
     }
 
+    export interface PaginatedActionPredictionConfigListList {
+      count: number;
+      /** @nullable */
+      next?: string | null;
+      /** @nullable */
+      previous?: string | null;
+      results: ActionPredictionConfigList[];
+    }
+
+    export interface PaginatedActionPredictionModelListList {
+      count: number;
+      /** @nullable */
+      next?: string | null;
+      /** @nullable */
+      previous?: string | null;
+      results: ActionPredictionModelList[];
+    }
+
     export type PaginatedActivityLogList = ActivityLog[];
 
     export interface PaginatedAlertList {
@@ -21138,6 +21316,90 @@ export namespace Schemas {
        * @nullable
        */
       readonly user_access_level?: string | null;
+    }
+
+    export interface PatchedActionPredictionConfig {
+      readonly id?: string;
+      /**
+       * Human-readable name for the prediction config.
+       * @maxLength 400
+       */
+      name?: string;
+      /** Longer description of the prediction config's purpose. */
+      description?: string;
+      /**
+       * ID of the PostHog action to predict. Mutually exclusive with event_name.
+       * @nullable
+       */
+      action?: number | null;
+      /**
+       * Name of the raw event to predict. Mutually exclusive with action.
+       * @maxLength 400
+       * @nullable
+       */
+      event_name?: string | null;
+      /**
+       * Number of days to look back for prediction data.
+       * @minimum 1
+       */
+      lookback_days?: number;
+      /**
+       * Sandbox task run that trains this prediction config.
+       * @nullable
+       */
+      readonly task_run?: string | null;
+      /**
+       * The current winning model. Set by the agent after the experiment loop.
+       * @nullable
+       */
+      winning_model?: string | null;
+      /**
+       * Current training status: not_started, queued, in_progress, completed, failed, cancelled, or null if no training run.
+       * @nullable
+       */
+      readonly training_status?: string | null;
+      readonly created_by?: UserBasic;
+      readonly created_at?: string;
+      /** @nullable */
+      readonly updated_at?: string | null;
+    }
+
+    export interface PatchedActionPredictionModel {
+      readonly id?: string;
+      config?: string;
+      /**
+       * Groups runs from the same agent experiment session.
+       * @nullable
+       */
+      experiment_id?: string | null;
+      /**
+       * S3 storage path to the serialized model artifact.
+       * @maxLength 2000
+       */
+      model_url?: string;
+      /** Model evaluation metrics (e.g. accuracy, AUC, F1). */
+      metrics?: unknown;
+      /** Feature importance scores from model training. */
+      feature_importance?: unknown;
+      /** Self-contained scripts for this run. Keys: query (HogQL), utils (API helpers), train (training script), predict (scoring script). */
+      artifact_scripts?: unknown;
+      /** Agent lab notebook: what was tried, what was observed, what to try next. */
+      notes?: string;
+      /**
+       * Specific task run that produced this model.
+       * @nullable
+       */
+      readonly task_run?: string | null;
+      /**
+       * Current prediction status: not_started, queued, in_progress, completed, failed, cancelled, or null if no prediction run.
+       * @nullable
+       */
+      readonly prediction_status?: string | null;
+      /** User who created this model. */
+      readonly created_by?: UserBasic | null;
+      readonly created_at?: string;
+      /** @nullable */
+      readonly updated_at?: string | null;
     }
 
     export interface PatchedAddPersonsToStaticCohortRequest {
@@ -25044,6 +25306,11 @@ export namespace Schemas {
     export interface PinnedSceneTabs {
       tabs?: PinnedSceneTab[];
       homepage?: PinnedSceneTab | null;
+    }
+
+    export interface PredictRequest {
+      /** Instructions for the prediction agent describing what to do with the model, e.g. 'score all users and write person properties', 'run a simulation for the next 30 days', 'predict which users will churn this week'. */
+      prompt: string;
     }
 
     /**
@@ -29307,6 +29574,20 @@ export namespace Schemas {
     }
 
     /**
+     * Form fields to include with the POST request.
+     */
+    export type UploadURLResponseFields = {[key: string]: string};
+
+    export interface UploadURLResponse {
+      /** Presigned S3 POST URL to upload the file to. */
+      url: string;
+      /** Form fields to include with the POST request. */
+      fields: UploadURLResponseFields;
+      /** S3 storage path to use as model_url when creating a model. */
+      storage_path: string;
+    }
+
+    /**
      * The release condition to evaluate
      */
     export type UserBlastRadiusRequestCondition = {[key: string]: unknown};
@@ -30749,6 +31030,28 @@ export namespace Schemas {
      * A search term.
      */
     search?: string;
+    };
+
+    export type ActionPredictionConfigsListParams = {
+    /**
+     * Number of results to return per page.
+     */
+    limit?: number;
+    /**
+     * The initial index from which to return the results.
+     */
+    offset?: number;
+    };
+
+    export type ActionPredictionModelsListParams = {
+    /**
+     * Number of results to return per page.
+     */
+    limit?: number;
+    /**
+     * The initial index from which to return the results.
+     */
+    offset?: number;
     };
 
     export type ApprovalPoliciesListParams = {
