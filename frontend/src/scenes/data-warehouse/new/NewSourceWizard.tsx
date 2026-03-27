@@ -193,7 +193,7 @@ function InternalSourcesWizard(props: NewSourcesWizardProps): JSX.Element {
                             <h4 className="text-lg font-semibold mb-0">{modalTitle}</h4>
                             <p className="text-sm text-muted-alt mb-0">
                                 {source.access_method === 'direct'
-                                    ? `Query ${selectedConnector.label ?? selectedConnector.name} directly from PostHog without warehouse syncs.`
+                                    ? `Query selected ${selectedConnector.label ?? selectedConnector.name} tables live from PostHog. Tables stay in the source database and are not synced into the data warehouse.`
                                     : `Sync data from ${selectedConnector.label ?? selectedConnector.name} into the PostHog data warehouse.`}
                             </p>
                         </div>
@@ -260,7 +260,7 @@ function FirstStep({ allowedSources }: NewSourcesWizardProps): JSX.Element {
 }
 
 function SecondStep(): JSX.Element {
-    const { selectedConnector } = useValues(sourceWizardLogic)
+    const { selectedConnector, source } = useValues(sourceWizardLogic)
 
     return selectedConnector ? (
         <div className="space-y-4">
@@ -291,7 +291,7 @@ function SecondStep(): JSX.Element {
 
             <LemonDivider />
 
-            <SourceForm sourceConfig={selectedConnector} />
+            <SourceForm sourceConfig={selectedConnector} initialAccessMethod={source.access_method} />
         </div>
     ) : (
         <BindLogic logic={dataWarehouseTableLogic} props={{ id: 'new' }}>

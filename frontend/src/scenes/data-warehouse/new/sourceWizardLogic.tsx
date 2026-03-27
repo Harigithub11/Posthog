@@ -1094,6 +1094,7 @@ export const sourceWizardLogic = kea<sourceWizardLogicType>([
     urlToAction(({ actions, values }) => {
         const handleUrlChange = (_: Record<string, string | undefined>, searchParams: Record<string, string>): void => {
             const kind = searchParams.kind?.toLowerCase()
+            const accessMethod = searchParams.access_method === 'direct' ? 'direct' : 'warehouse'
             const returnUrl = searchParams.returnUrl
             const returnLabel = searchParams.returnLabel
 
@@ -1114,13 +1115,14 @@ export const sourceWizardLogic = kea<sourceWizardLogicType>([
 
             if (source) {
                 actions.selectConnector(source)
+                actions.updateSource({ access_method: accessMethod })
                 actions.handleRedirect(source.name)
                 actions.setStep(2)
                 // Restore form values saved before an OAuth redirect
                 const savedValues = restoreSourceFormState(source.name.toLowerCase())
-                if (savedValues) {
-                    actions.setSourceConnectionDetailsValues(savedValues)
-                }
+                actions.setSourceConnectionDetailsValues(
+                    getInitialSourceConnectionDetailsValues(savedValues, accessMethod)
+                )
                 return
             }
 
@@ -1239,6 +1241,15 @@ export const sourceWizardLogic = kea<sourceWizardLogicType>([
         },
     })),
 ])
+
+export const getInitialSourceConnectionDetailsValues = (
+    savedValues: Record<string, unknown> | null | undefined,
+    accessMethod: 'warehouse' | 'direct'
+): Record<string, unknown> => ({
+    ...savedValues,
+    access_method:
+        savedValues && typeof savedValues.access_method === 'string' ? savedValues.access_method : accessMethod,
+})
 
 export const getErrorsForFields = (
     fields: SourceFieldConfig[],

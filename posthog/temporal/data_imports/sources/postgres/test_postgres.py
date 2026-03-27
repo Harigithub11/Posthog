@@ -1,12 +1,13 @@
 from datetime import UTC, date, datetime
 
 import pytest
+import pyarrow as pa
+import structlog
+from unittest import mock
 from unittest.mock import patch
 
 from django.db import connection as django_connection
 
-import pyarrow as pa
-import structlog
 from psycopg import sql
 
 from posthog.temporal.data_imports.sources.postgres.postgres import (
@@ -22,6 +23,9 @@ from posthog.temporal.data_imports.sources.postgres.postgres import (
     _has_duplicate_primary_keys,
     _is_read_replica,
     _normalize_function_names,
+    get_foreign_keys,
+    get_postgres_row_count,
+    get_schemas,
     filter_postgres_incremental_fields,
 )
 from posthog.temporal.data_imports.sources.postgres.source import PostgresSource
@@ -90,6 +94,101 @@ class TestPostgresSourceNonRetryableErrors:
         non_retryable = source.get_non_retryable_errors()
         is_non_retryable = any(pattern in error_msg for pattern in non_retryable.keys())
         assert is_non_retryable, f"Permanent error should be non-retryable: {error_msg}"
+
+
+class TestPostgresSchemaDiscovery:
+    def _mock_connection(self, *fetchall_results: list[tuple[object, ...]]):
+        cursor = mock.MagicMock()
+        cursor.fetchall.side_effect = list(fetchall_results)
+
+        cursor_context = mock.MagicMock()
+        cursor_context.__enter__.return_value = cursor
+        cursor_context.__exit__.return_value = None
+
+        connection = mock.MagicMock()
+        connection.cursor.return_value = cursor_context
+        return connection
+
+    def test_get_schemas_qualifies_table_names_when_schema_is_blank(self):
+        connection = self._mock_connection(
+            [("public", "users"), ("analytics", "events")],
+            [
+                ("analytics", "events", "id", "integer", "NO", 1),
+                ("public", "users", "id", "integer", "NO", 1),
+            ],
+        )
+
+        with mock.patch(
+            "posthog.temporal.data_imports.sources.postgres.postgres._connect_to_postgres",
+            return_value=connection,
+        ):
+            schemas = get_schemas(
+                host="localhost",
+                port=5432,
+                database="postgres",
+                user="postgres",
+                password="postgres",
+                schema="",
+            )
+
+        cursor = connection.cursor.return_value.__enter__.return_value
+        first_query = cursor.execute.call_args_list[0].args[0]
+        second_query = cursor.execute.call_args_list[1].args[0]
+
+        assert "NOT IN" in first_query
+        assert "ALL(" not in first_query
+        assert " IN (" in second_query
+        assert "ANY(" not in second_query
+        assert set(schemas.keys()) == {"public.users", "analytics.events"}
+        assert schemas["public.users"].source_schema == "public"
+        assert schemas["public.users"].source_table_name == "users"
+        assert schemas["analytics.events"].source_schema == "analytics"
+        assert schemas["analytics.events"].source_table_name == "events"
+
+    def test_get_foreign_keys_qualifies_target_table_names_when_schema_is_blank(self):
+        connection = self._mock_connection(
+            [("public", "users"), ("analytics", "events")],
+            [("analytics", "events", "user_id", "public", "users", "id")],
+        )
+
+        with mock.patch(
+            "posthog.temporal.data_imports.sources.postgres.postgres._connect_to_postgres",
+            return_value=connection,
+        ):
+            foreign_keys = get_foreign_keys(
+                host="localhost",
+                port=5432,
+                database="postgres",
+                user="postgres",
+                password="postgres",
+                schema="",
+            )
+
+        cursor = connection.cursor.return_value.__enter__.return_value
+        first_query = cursor.execute.call_args_list[0].args[0]
+        second_query = cursor.execute.call_args_list[1].args[0]
+
+        assert "NOT IN" in first_query
+        assert "ALL(" not in first_query
+        assert " IN (" in second_query
+        assert "ANY(" not in second_query
+        assert foreign_keys == {"analytics.events": [("user_id", "public.users", "id")]}
+
+    def test_get_postgres_row_count_skips_blank_schema_browse(self):
+        with mock.patch(
+            "posthog.temporal.data_imports.sources.postgres.postgres._connect_to_postgres"
+        ) as patch_connect_to_postgres:
+            row_counts = get_postgres_row_count(
+                host="localhost",
+                port=5432,
+                database="postgres",
+                user="postgres",
+                password="postgres",
+                schema="   ",
+            )
+
+        assert row_counts == {}
+        patch_connect_to_postgres.assert_not_called()
 
 
 class TestGetSslmode:
