@@ -2119,18 +2119,9 @@ class GradientScaleMode(StrEnum):
     RELATIVE = "relative"
 
 
-class HeatmapSettings(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-    gradient: list[HeatmapGradientStop] | None = None
-    gradientPreset: str | None = None
-    gradientScaleMode: GradientScaleMode | None = None
-    valueColumn: str | None = None
-    xAxisColumn: str | None = None
-    xAxisLabel: str | None = None
-    yAxisColumn: str | None = None
-    yAxisLabel: str | None = None
+class HeatmapSortOrder(StrEnum):
+    ASC = "asc"
+    DESC = "desc"
 
 
 class HedgehogActorAccessoryOption(StrEnum):
@@ -5498,30 +5489,6 @@ class ChartAxis(BaseModel):
     settings: Settings | None = None
 
 
-class ChartSettings(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-    goalLines: list[GoalLine] | None = None
-    heatmap: HeatmapSettings | None = None
-    leftYAxisSettings: YAxisSettings | None = None
-    rightYAxisSettings: YAxisSettings | None = None
-    seriesBreakdownColumn: str | None = None
-    showLegend: bool | None = None
-    showNullsAsZero: bool | None = None
-    showTotalRow: bool | None = None
-    showXAxisBorder: bool | None = None
-    showXAxisTicks: bool | None = None
-    showYAxisBorder: bool | None = None
-    stackBars100: bool | None = Field(default=None, description="Whether we fill the bars to 100% in stacked mode")
-    xAxis: ChartAxis | None = None
-    yAxis: list[ChartAxis] | None = None
-    yAxisAtZero: bool | None = Field(
-        default=None,
-        description=("Deprecated: use `[left|right]YAxisSettings`. Whether the Y axis should start at zero"),
-    )
-
-
 class ClickhouseQueryProgress(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -6042,6 +6009,22 @@ class GroupPropertyFilter(BaseModel):
     operator: PropertyOperator
     type: Literal["group"] = "group"
     value: list[str | float | bool] | str | float | bool | None = None
+
+
+class HeatmapSettings(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    gradient: list[HeatmapGradientStop] | None = None
+    gradientPreset: str | None = None
+    gradientScaleMode: GradientScaleMode | None = None
+    sortColumn: str | None = None
+    sortOrder: HeatmapSortOrder | None = None
+    valueColumn: str | None = None
+    xAxisColumn: str | None = None
+    xAxisLabel: str | None = None
+    yAxisColumn: str | None = None
+    yAxisLabel: str | None = None
 
 
 class HogQLAutocompleteResponse(BaseModel):
@@ -10636,6 +10619,30 @@ class CalendarHeatmapResponse(BaseModel):
     timings: list[QueryTiming] | None = Field(
         default=None,
         description=("Measured timings for different parts of the query generation process"),
+    )
+
+
+class ChartSettings(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    goalLines: list[GoalLine] | None = None
+    heatmap: HeatmapSettings | None = None
+    leftYAxisSettings: YAxisSettings | None = None
+    rightYAxisSettings: YAxisSettings | None = None
+    seriesBreakdownColumn: str | None = None
+    showLegend: bool | None = None
+    showNullsAsZero: bool | None = None
+    showTotalRow: bool | None = None
+    showXAxisBorder: bool | None = None
+    showXAxisTicks: bool | None = None
+    showYAxisBorder: bool | None = None
+    stackBars100: bool | None = Field(default=None, description="Whether we fill the bars to 100% in stacked mode")
+    xAxis: ChartAxis | None = None
+    yAxis: list[ChartAxis] | None = None
+    yAxisAtZero: bool | None = Field(
+        default=None,
+        description=("Deprecated: use `[left|right]YAxisSettings`. Whether the Y axis should start at zero"),
     )
 
 

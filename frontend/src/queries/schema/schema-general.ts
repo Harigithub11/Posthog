@@ -1073,6 +1073,11 @@ export interface HeatmapGradientStop {
     color: string
 }
 
+export enum HeatmapSortOrder {
+    Asc = 'asc',
+    Desc = 'desc',
+}
+
 export interface HeatmapSettings {
     xAxisColumn?: string
     yAxisColumn?: string
@@ -1082,6 +1087,8 @@ export interface HeatmapSettings {
     gradient?: HeatmapGradientStop[]
     gradientPreset?: string
     gradientScaleMode?: 'absolute' | 'relative'
+    sortColumn?: string
+    sortOrder?: HeatmapSortOrder
 }
 
 export interface YAxisSettings {
