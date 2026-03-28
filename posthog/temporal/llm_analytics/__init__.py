@@ -14,6 +14,7 @@ from posthog.temporal.llm_analytics.run_tagger import (
     RunTaggerWorkflow,
     disable_tagger_activity,
     emit_tagger_event_activity,
+    execute_hog_tagger_activity,
     execute_tagger_activity,
     fetch_tagger_activity,
 )
@@ -63,6 +64,7 @@ TAGGER_WORKFLOWS = [
 TAGGER_ACTIVITIES = [
     fetch_tagger_activity,
     execute_tagger_activity,
+    execute_hog_tagger_activity,
     emit_tagger_event_activity,
     disable_tagger_activity,
 ]
