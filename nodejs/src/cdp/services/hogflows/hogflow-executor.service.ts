@@ -2,6 +2,7 @@ import { get } from 'lodash'
 import { DateTime } from 'luxon'
 
 import { HogFlow, HogFlowAction } from '../../../schema/hogflow'
+import { CohortMembershipResolver } from '../../../utils/cohort-membership-resolver'
 import { logger } from '../../../utils/logger'
 import { UUIDT } from '../../../utils/utils'
 import {
@@ -16,7 +17,12 @@ import {
     MinimalLogEntry,
     WarehouseWebhookPayload,
 } from '../../types'
-import { convertToHogFunctionFilterGlobal, filterFunctionInstrumented } from '../../utils/hog-function-filtering'
+import {
+    FilterFunctionsProvider,
+    buildCohortFunctionsProvider,
+    convertToHogFunctionFilterGlobal,
+    filterFunctionInstrumented,
+} from '../../utils/hog-function-filtering'
 import { createInvocationResult } from '../../utils/invocation-utils'
 import { HogExecutorExecuteAsyncOptions } from '../hog-executor.service'
 import { RecipientPreferencesService } from '../messaging/recipient-preferences.service'
@@ -81,7 +87,8 @@ export class HogFlowExecutorService {
 
     constructor(
         hogFlowFunctionsService: HogFlowFunctionsService,
-        recipientPreferencesService: RecipientPreferencesService
+        recipientPreferencesService: RecipientPreferencesService,
+        private readonly cohortMembershipResolver: CohortMembershipResolver
     ) {
         const hogFunctionHandler = new HogFunctionHandler(hogFlowFunctionsService, recipientPreferencesService, 'fetch')
         const hogFunctionEmailHandler = new HogFunctionHandler(
@@ -119,6 +126,15 @@ export class HogFlowExecutorService {
         // TRICKY: The frontend generates filters matching the Clickhouse event type so we are converting back
         const filterGlobals = convertToHogFunctionFilterGlobal(triggerGlobals)
 
+        // Build lazy VM function providers
+        const functionProviders: FilterFunctionsProvider[] = [
+            buildCohortFunctionsProvider(
+                this.cohortMembershipResolver,
+                triggerGlobals.project.id,
+                triggerGlobals.person?.id
+            ),
+        ]
+
         for (const hogFlow of hogFlows) {
             if (hogFlow.trigger.type !== 'event') {
                 continue
@@ -127,6 +143,7 @@ export class HogFlowExecutorService {
                 fn: hogFlow,
                 filters: hogFlow.trigger.filters,
                 filterGlobals,
+                functionProviders,
             })
 
             // Add any generated metrics and logs to our collections
