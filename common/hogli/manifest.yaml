@@ -729,6 +729,9 @@ environment:
         description: Disable anonymous usage telemetry
     telemetry:status:
         description: Show current telemetry settings
+    e2e:db:snapshot:
+        bin_script: e2e-db-snapshot
+        description: Create a snapshot of the current state of the databases for E2E testing
     start:stripe:mock:
         bin_script: start-stripe-mock
         description: 'Start the local Stripe mock API server'

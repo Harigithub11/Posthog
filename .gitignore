@@ -9,6 +9,7 @@ __pycache__/
 .dlt
 .dmypy.json
 .DS_Store
+.e2e-snapshot
 .eslintcache
 .hypothesis
 .mypy_cache
