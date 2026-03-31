@@ -2428,6 +2428,7 @@ const api = {
                     ActivityScope.HOG_FLOW,
                     ActivityScope.EXPERIMENT,
                     ActivityScope.TAG,
+                    ActivityScope.BATCH_EXPORT,
                     ActivityScope.ENDPOINT,
                     ActivityScope.PRODUCT_TOUR,
                     ActivityScope.TICKET,
@@ -3691,12 +3692,15 @@ const api = {
                 return await new ApiRequest().errorTrackingSymbolSets().withQueryString(toParams(queryString)).get()
             },
 
-            async update(id: ErrorTrackingSymbolSet['id'], data: FormData): Promise<void> {
-                return await new ApiRequest().errorTrackingSymbolSet(id).update({ data })
-            },
-
             async delete(id: ErrorTrackingSymbolSet['id']): Promise<void> {
                 return await new ApiRequest().errorTrackingSymbolSet(id).delete()
+            },
+
+            async bulkDelete(ids: ErrorTrackingSymbolSet['id'][]): Promise<void> {
+                return await new ApiRequest()
+                    .errorTrackingSymbolSets()
+                    .withAction('bulk_delete')
+                    .create({ data: { ids } })
             },
         },
 
