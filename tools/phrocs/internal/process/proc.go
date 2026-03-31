@@ -16,6 +16,7 @@ import (
 	gops "github.com/shirou/gopsutil/v4/process"
 
 	"github.com/posthog/posthog/phrocs/internal/config"
+	"github.com/posthog/posthog/phrocs/internal/telemetry"
 )
 
 const metricsSampleInterval = 5 * time.Second
@@ -71,6 +72,7 @@ type Metrics struct {
 	MemRSSMB   float64   `json:"mem_rss_mb"`
 	PeakMemMB  float64   `json:"peak_mem_rss_mb"`
 	CPUPercent float64   `json:"cpu_percent"`
+	PeakCPUPct float64   `json:"peak_cpu_percent"`
 	CPUTimeS   float64   `json:"cpu_time_s"`
 	Threads    int32     `json:"thread_count"`
 	Children   int       `json:"child_process_count"`
@@ -94,6 +96,7 @@ type Snapshot struct {
 	MemRSSMB          *float64   `json:"mem_rss_mb"`
 	PeakMemRSSMB      *float64   `json:"peak_mem_rss_mb"`
 	CPUPercent        *float64   `json:"cpu_percent"`
+	PeakCPUPercent    *float64   `json:"peak_cpu_percent"`
 	CPUTimeS          *float64   `json:"cpu_time_s"`
 	ThreadCount       *int32     `json:"thread_count"`
 	ChildProcessCount *int       `json:"child_process_count"`
@@ -222,6 +225,7 @@ func (p *Process) Snapshot() Snapshot {
 		mem := m.MemRSSMB
 		peak := m.PeakMemMB
 		cpu := m.CPUPercent
+		peakCPU := m.PeakCPUPct
 		cpuT := m.CPUTimeS
 		thr := m.Threads
 		ch := m.Children
@@ -230,6 +234,7 @@ func (p *Process) Snapshot() Snapshot {
 		snap.MemRSSMB = &mem
 		snap.PeakMemRSSMB = &peak
 		snap.CPUPercent = &cpu
+		snap.PeakCPUPercent = &peakCPU
 		snap.CPUTimeS = &cpuT
 		snap.ThreadCount = &thr
 		snap.ChildProcessCount = &ch
@@ -348,6 +353,7 @@ func (p *Process) Start(send func(tea.Msg)) error {
 		// (process was restarted) or if an explicit Stop() was called
 		if p.cmd == cmd && p.status != StatusStopped {
 			p.status = st
+			p.trackProcessCompleted(st)
 			p.metrics = nil
 			code := cmd.ProcessState.ExitCode()
 			p.exitCode = &code
@@ -468,6 +474,7 @@ func (p *Process) startWithPipe(cmd *exec.Cmd, send func(tea.Msg)) error {
 		// (process was restarted) or if an explicit Stop() was called
 		if p.cmd == cmd && p.status != StatusStopped {
 			p.status = st
+			p.trackProcessCompleted(st)
 			p.metrics = nil
 			code := cmd.ProcessState.ExitCode()
 			p.exitCode = &code
@@ -689,6 +696,9 @@ func (p *Process) startMetricsSampler(pid int) {
 			p.metrics.PeakMemMB = rssMB
 		}
 		p.metrics.CPUPercent = cpuPct
+		if cpuPct > p.metrics.PeakCPUPct {
+			p.metrics.PeakCPUPct = cpuPct
+		}
 		p.metrics.CPUTimeS = cpuTime
 		p.metrics.Threads = threads
 		p.metrics.Children = len(all) - 1
@@ -787,6 +797,23 @@ func (p *Process) PID() int {
 		return p.cmd.Process.Pid
 	}
 	return 0
+}
+
+// trackProcessCompleted sends telemetry with peak resource usage.
+// Must be called with p.mu held, before p.metrics is cleared.
+func (p *Process) trackProcessCompleted(st Status) {
+	stats := telemetry.ProcessStats{
+		Name:      p.Name,
+		Status:    st.String(),
+		ExitCode:  p.exitCode,
+		DurationS: time.Since(p.startedAt).Seconds(),
+	}
+	if m := p.metrics; m != nil {
+		stats.PeakMemMB = m.PeakMemMB
+		stats.PeakCPUPct = m.PeakCPUPct
+		stats.CPUTimeS = m.CPUTimeS
+	}
+	telemetry.TrackProcessCompleted(stats)
 }
 
 // WriteInput sends raw bytes to the process's stdin (PTY master or stdin pipe).
