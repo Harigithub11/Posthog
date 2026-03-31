@@ -14,9 +14,16 @@
 export type EndpointRequestApiBucketOverrides = { [key: string]: string } | null | null
 
 export interface DateRangeApi {
-    /** @nullable */
+    /**
+   * Start of the date range. Accepts ISO 8601 timestamps (e.g., 2024-01-15T00:00:00Z) or relative formats: -7d (7 days ago), -2w (2 weeks ago), -1m (1 month ago),
+-1h (1 hour ago), -1mStart (start of last month), -1yStart (start of last year).
+   * @nullable
+   */
     date_from?: string | null
-    /** @nullable */
+    /**
+     * End of the date range. Same format as date_from. Omit or null for "now".
+     * @nullable
+     */
     date_to?: string | null
     /**
      * Whether the date_from and date_to should be used verbatim. Disables rounding to the start and end of period.
