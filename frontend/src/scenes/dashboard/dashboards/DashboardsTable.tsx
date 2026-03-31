@@ -24,7 +24,7 @@ import { teamLogic } from 'scenes/teamLogic'
 import { urls } from 'scenes/urls'
 
 import { projectTreeDataLogic } from '~/layout/panel-layout/ProjectTree/projectTreeDataLogic'
-import { dashboardsModel, nameCompareFunction } from '~/models/dashboardsModel'
+import { dashboardsModel } from '~/models/dashboardsModel'
 import {
     AccessControlLevel,
     AccessControlResourceType,
@@ -34,6 +34,7 @@ import {
 } from '~/types'
 
 import { DASHBOARD_CANNOT_EDIT_MESSAGE } from '../DashboardHeader'
+import { DashboardStarToggle } from '../DashboardStarToggle'
 import { DashboardsFiltersBar } from './DashboardsFiltersBar'
 
 export function DashboardsTableContainer(): JSX.Element {
@@ -58,7 +59,7 @@ export function DashboardsTable({
 }: DashboardsTableProps): JSX.Element {
     const { unpinDashboard, pinDashboard } = useActions(dashboardsModel)
     const { tableSortingChanged } = useActions(dashboardsLogic)
-    const { tableSorting } = useValues(dashboardsLogic)
+    const { tableSorting, dashboardsTableEmptyState } = useValues(dashboardsLogic)
     const { currentTeam } = useValues(teamLogic)
     const { showDuplicateDashboardModal } = useActions(duplicateDashboardLogic)
     const { showDeleteDashboardModal } = useActions(deleteDashboardLogic)
@@ -69,18 +70,24 @@ export function DashboardsTable({
         {
             width: 0,
             dataIndex: 'pinned',
-            render: function Render(pinned, { id }) {
+            render: function RenderStarAndPin(pinned, { id, name }) {
                 return (
-                    <LemonButton
-                        size="small"
-                        onClick={
-                            pinned
-                                ? () => unpinDashboard(id, DashboardEventSource.DashboardsList)
-                                : () => pinDashboard(id, DashboardEventSource.DashboardsList)
-                        }
-                        tooltip={pinned ? 'Unpin dashboard' : 'Pin dashboard'}
-                        icon={pinned ? <IconPinFilled /> : <IconPin />}
-                    />
+                    <div className="flex items-center gap-px">
+                        <DashboardStarToggle dashboardId={id} name={name} dataAttr="dashboards-list-star-toggle" />
+                        <LemonButton
+                            data-attr="dashboards-list-pin-toggle"
+                            data-dashboard-id={id}
+                            data-pinned={pinned}
+                            size="small"
+                            onClick={
+                                pinned
+                                    ? () => unpinDashboard(id, DashboardEventSource.DashboardsList)
+                                    : () => pinDashboard(id, DashboardEventSource.DashboardsList)
+                            }
+                            tooltip={pinned ? 'Unpin dashboard' : 'Pin dashboard'}
+                            icon={pinned ? <IconPinFilled /> : <IconPin />}
+                        />
+                    </div>
                 )
             },
         },
@@ -88,6 +95,7 @@ export function DashboardsTable({
             title: 'Name',
             dataIndex: 'name',
             width: '40%',
+            className: 'min-w-60',
             render: function Render(_, { id, name, description, is_shared, user_access_level }) {
                 const isPrimary = id === currentTeam?.primary_dashboard
                 const canEditDashboard = accessLevelSatisfied(
@@ -124,7 +132,7 @@ export function DashboardsTable({
                     />
                 )
             },
-            sorter: nameCompareFunction,
+            sorter: (a, b) => (a.name ?? 'Untitled').localeCompare(b.name ?? 'Untitled'),
         },
         {
             title: 'Tags',
@@ -260,7 +268,7 @@ export function DashboardsTable({
                 loading={dashboardsLoading}
                 defaultSorting={tableSorting}
                 onSort={tableSortingChanged}
-                emptyState="No dashboards matching your filters!"
+                emptyState={dashboardsTableEmptyState}
                 nouns={['dashboard', 'dashboards']}
             />
         </>
