@@ -8,7 +8,7 @@ from products.data_modeling.backend.models import DAG
 
 
 class DAGSerializer(serializers.ModelSerializer):
-    node_count = serializers.IntegerField(read_only=True)
+    node_count = serializers.IntegerField(read_only=True, default=0)
 
     class Meta:
         model = DAG
