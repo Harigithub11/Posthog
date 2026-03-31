@@ -7,8 +7,6 @@ interface QueryWrapperConfig<T extends ZodObjectAny> {
     schema: T
     kind: string
     uiResourceUri?: string
-    /** Values merged into the query body alongside agent-provided params. */
-    fixedProperties?: Record<string, unknown>
     /** When set, `_posthogUrl` uses `{baseUrl}{urlPrefix}` instead of `/insights/new?q=...`. */
     urlPrefix?: string
 }
@@ -20,7 +18,7 @@ export function createQueryWrapper<T extends ZodObjectAny>(config: QueryWrapperC
         handler: async (context: Context, rawParams: z.infer<T>) => {
             const projectId = await context.stateManager.getProjectId()
             const params = config.schema.parse(rawParams)
-            const query = { ...params, ...config.fixedProperties, kind: config.kind }
+            const query = { ...params, kind: config.kind }
             const result = await context.api.request<{
                 results: unknown
                 columns?: unknown
