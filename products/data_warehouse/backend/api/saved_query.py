@@ -306,7 +306,10 @@ class DataWarehouseSavedQuerySerializer(DataWarehouseSavedQuerySerializerMixin, 
 
             dag_obj = None
             if dag_id:
-                dag_obj = DAG.objects.filter(id=dag_id, team_id=view.team_id).first()
+                try:
+                    dag_obj = DAG.objects.get(id=dag_id, team_id=view.team_id)
+                except DAG.DoesNotExist:
+                    raise serializers.ValidationError({"dag_id": "Invalid DAG ID or DAG does not belong to this team"})
             sync_saved_query_to_dag(view, dag=dag_obj)
         except Exception as e:
             capture_exception(e)
