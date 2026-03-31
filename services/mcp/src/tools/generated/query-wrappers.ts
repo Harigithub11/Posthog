@@ -369,6 +369,11 @@ const ExperimentMetricMathType = z.enum([
     'dau',
     'unique_group',
     'hogql',
+    'median',
+    'p75',
+    'p90',
+    'p95',
+    'p99',
 ])
 
 const CalendarHeatmapMathType = z.enum(['total', 'dau'])

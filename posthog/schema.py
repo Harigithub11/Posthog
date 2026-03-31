@@ -1622,6 +1622,11 @@ class ExperimentMetricMathType(StrEnum):
     DAU = "dau"
     UNIQUE_GROUP = "unique_group"
     HOGQL = "hogql"
+    MEDIAN = "median"
+    P75 = "p75"
+    P90 = "p90"
+    P95 = "p95"
+    P99 = "p99"
 
 
 class ExperimentMetricOutlierHandling(BaseModel):
