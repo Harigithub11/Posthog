@@ -2,6 +2,7 @@ import re
 import json
 import time
 import uuid
+import posixpath
 from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime, timedelta
@@ -34,7 +35,7 @@ from posthog.cloud_utils import is_cloud, is_dev_mode
 from posthog.constants import AUTH_BACKEND_KEYS
 from posthog.event_usage import get_event_source, get_mcp_properties
 from posthog.geoip import get_geoip_properties
-from posthog.models import Action, Cohort, Dashboard, FeatureFlag, Insight, Team, User
+from posthog.models import Action, Cohort, FeatureFlag, Insight, Team, User
 from posthog.models.activity_logging.utils import activity_storage
 from posthog.models.utils import generate_random_token
 from posthog.rbac.user_access_control import UserAccessControl
@@ -42,6 +43,7 @@ from posthog.settings import PROJECT_SWITCHING_TOKEN_ALLOWLIST, SITE_URL
 from posthog.user_permissions import UserPermissions
 from posthog.utils import _is_valid_ip_address
 
+from products.dashboards.backend.models.dashboard import Dashboard
 from products.notebooks.backend.models import Notebook
 
 from .auth import PersonalAPIKeyAuthentication
@@ -133,6 +135,49 @@ class AllowIPMiddleware:
             "PostHog is not available in your region. If you think this is in error, please contact tim@posthog.com.",
             status=403,
         )
+
+
+_OAUTH_CORS_PATHS = frozenset(
+    {
+        "/oauth/token",
+        "/oauth/token/",
+        "/toolbar_oauth/check",
+        "/toolbar_oauth/check/",
+    }
+)
+
+
+class OAuthCorsPreflightMiddleware:
+    """Echo back all requested headers for OAuth CORS preflights.
+
+    The toolbar runs inside the customer's page and calls ``window.fetch``.
+    Customer code may monkey-patch ``fetch`` to inject custom headers
+    (e.g. ``x-app-version``).  If those headers aren't in our CORS
+    ``Access-Control-Allow-Headers``, the browser blocks the request.
+
+    For OAuth endpoints we simply echo back whatever
+    ``Access-Control-Request-Headers`` the browser asks for.
+    This is safe because the endpoints are auth-protected via Bearer
+    tokens (not cookies), so no credentials header is needed.
+    """
+
+    def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        origin = request.headers.get("Origin")
+        if request.method == "OPTIONS" and origin and request.path in _OAUTH_CORS_PATHS:
+            response = HttpResponse(status=200)
+            response["Access-Control-Allow-Origin"] = origin
+            response["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+            requested_headers = request.headers.get("Access-Control-Request-Headers", "")
+            if requested_headers:
+                response["Access-Control-Allow-Headers"] = requested_headers
+            response["Access-Control-Max-Age"] = "86400"
+            response["Vary"] = "Origin"
+            return response
+
+        return self.get_response(request)
 
 
 class CsrfOrKeyViewMiddleware(CsrfViewMiddleware):
@@ -700,10 +745,22 @@ class OAuthCoopMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
 
+    @staticmethod
+    def _matches_oauth_prefix(path: str, prefixes: tuple[str, ...]) -> bool:
+        for prefix in prefixes:
+            if path.startswith(prefix) or path.rstrip("/") + "/" == prefix:
+                return True
+        return False
+
     def __call__(self, request):
         response = self.get_response(request)
-        if any(request.path.startswith(prefix) for prefix in self.OAUTH_PATH_PREFIXES):
+        if self._matches_oauth_prefix(request.path, self.OAUTH_PATH_PREFIXES):
             response["Cross-Origin-Opener-Policy"] = "unsafe-none"
+        elif request.path == "/login" or request.path == "/login/":
+            next_url = request.GET.get("next", "")
+            normalized = posixpath.normpath(next_url) if next_url.startswith("/") else next_url
+            if self._matches_oauth_prefix(normalized, self.OAUTH_PATH_PREFIXES):
+                response["Cross-Origin-Opener-Policy"] = "unsafe-none"
         return response
 
 
