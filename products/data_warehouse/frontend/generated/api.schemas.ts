@@ -833,6 +833,11 @@ export interface DataWarehouseSavedQueryApi {
      * @nullable
      */
     soft_update?: boolean | null
+    /**
+     * Optional DAG to place this view into
+     * @nullable
+     */
+    dag_id?: string | null
     /** @nullable */
     readonly is_materialized: boolean | null
     /** Where this SavedQuery is created.
@@ -899,6 +904,11 @@ export interface PatchedDataWarehouseSavedQueryApi {
      * @nullable
      */
     soft_update?: boolean | null
+    /**
+     * Optional DAG to place this view into
+     * @nullable
+     */
+    dag_id?: string | null
     /** @nullable */
     readonly is_materialized?: boolean | null
     /** Where this SavedQuery is created.
