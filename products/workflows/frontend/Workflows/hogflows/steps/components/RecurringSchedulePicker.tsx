@@ -32,6 +32,7 @@ type ScheduleConfig = {
 interface RecurringSchedulePickerProps {
     schedule?: ScheduleConfig | null
     onChange: (schedule: ScheduleConfig | null) => void
+    timezoneOptions?: { key: string; label: string }[]
 }
 
 interface FrequencyPickerProps {
@@ -239,7 +240,11 @@ function SchedulePreview({ state, summary, previewOccurrences, timezone }: Sched
     )
 }
 
-export function RecurringSchedulePicker({ schedule, onChange }: RecurringSchedulePickerProps): JSX.Element {
+export function RecurringSchedulePicker({
+    schedule,
+    onChange,
+    timezoneOptions,
+}: RecurringSchedulePickerProps): JSX.Element {
     const isOneTime = schedule ? isOneTimeSchedule(schedule.rrule) : false
     const isRepeating = !!schedule && !isOneTime
     const [state, setState] = useState<ScheduleState>(() =>
@@ -337,7 +342,6 @@ export function RecurringSchedulePicker({ schedule, onChange }: RecurringSchedul
                             if (checked) {
                                 emitChange(state, startDate, timezone)
                             } else if (startDate) {
-                                // Downgrade to one-time schedule
                                 onChange({
                                     rrule: ONE_TIME_RRULE,
                                     starts_at: startDate,
@@ -349,13 +353,36 @@ export function RecurringSchedulePicker({ schedule, onChange }: RecurringSchedul
                 </div>
             </div>
             {startsAt && (
-                <div className="text-xs text-muted -mt-1">
-                    Schedule timezone: {timezone} ({dayjs(startsAt).tz(timezone).format('h:mm A')})
+                <div className="flex items-center gap-1 text-xs text-muted -mt-1 flex-wrap">
+                    <span>Timezone:</span>
+                    {timezoneOptions ? (
+                        <LemonSelect
+                            size="xsmall"
+                            value={timezone}
+                            onChange={(newTimezone) => {
+                                if (!newTimezone) {
+                                    return
+                                }
+                                setLocalTimezone(newTimezone)
+                                if (isRepeating) {
+                                    emitChange(state, startsAt, newTimezone)
+                                } else {
+                                    onChange({
+                                        rrule: ONE_TIME_RRULE,
+                                        starts_at: startsAt,
+                                        timezone: newTimezone,
+                                    })
+                                }
+                            }}
+                            options={timezoneOptions.map((o) => ({ value: o.key, label: o.label }))}
+                        />
+                    ) : (
+                        <span>{timezone}</span>
+                    )}
                     {timezone !== dayjs.tz.guess() && (
-                        <>
-                            {' '}
+                        <span>
                             · Your time: {dayjs(startsAt).format('h:mm A')} {dayjs.tz.guess()}
-                        </>
+                        </span>
                     )}
                 </div>
             )}

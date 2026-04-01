@@ -38,9 +38,10 @@ import { IconAdsClick } from 'lib/lemon-ui/icons'
 import { LemonField } from 'lib/lemon-ui/LemonField'
 import { LemonRadio } from 'lib/lemon-ui/LemonRadio'
 import { featureFlagLogic } from 'lib/logic/featureFlagLogic'
-import { humanFriendlyNumber } from 'lib/utils'
+import { humanFriendlyNumber, timeZoneLabel } from 'lib/utils'
 import { publicWebhooksHostOrigin } from 'lib/utils/apiHost'
 import { TestAccountFilter } from 'scenes/insights/filters/TestAccountFilter/TestAccountFilter'
+import { preflightLogic } from 'scenes/PreflightCheck/preflightLogic'
 
 import { PropertyFilterType } from '~/types'
 
@@ -575,15 +576,22 @@ function StepTriggerAffectedUsers({ actionId, filters }: { actionId: string; fil
 function BatchScheduleSection(): JSX.Element {
     const { setPendingSchedule } = useActions(workflowLogic)
     const { currentSchedule, pendingSchedule } = useValues(workflowLogic)
+    const { preflight } = useValues(preflightLogic)
+
+    const timezoneOptions = Object.entries(preflight?.available_timezones || {}).map(([tz, offset]) => ({
+        key: tz,
+        label: timeZoneLabel(tz, offset),
+    }))
 
     return (
         <>
             <LemonDivider />
             <LemonLabel>Schedule</LemonLabel>
             <RecurringSchedulePicker
-                key={currentSchedule?.id ?? 'new'}
+                key={`${currentSchedule?.id ?? 'new'}-${pendingSchedule === false ? 'saved' : 'editing'}`}
                 schedule={pendingSchedule !== false ? pendingSchedule : (currentSchedule ?? null)}
                 onChange={(schedule) => setPendingSchedule(schedule)}
+                timezoneOptions={timezoneOptions}
             />
         </>
     )
