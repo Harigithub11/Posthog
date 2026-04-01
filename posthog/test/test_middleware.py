@@ -11,8 +11,9 @@ from django.core.cache import cache
 from django.test import Client as DjangoClient
 from django.urls import reverse
 
+from parameterized import parameterized
 from rest_framework import status
-from social_core.exceptions import AuthCanceled
+from social_core.exceptions import AuthCanceled, AuthFailed, AuthMissingParameter
 
 from posthog.api.test.test_organization import create_organization
 from posthog.api.test.test_team import create_team
@@ -1375,22 +1376,110 @@ class TestCSPMiddleware(APIBaseTest):
 class TestSocialAuthExceptionMiddleware(APIBaseTest):
     CONFIG_AUTO_LOGIN = False
 
-    def test_oauth_cancelled_redirects_to_login(self):
-        """Test that AuthCanceled exception on OAuth callback redirects to login with error code"""
+    def setUp(self):
+        super().setUp()
         from django.test import RequestFactory
 
         from posthog.middleware import SocialAuthExceptionMiddleware
 
-        middleware = SocialAuthExceptionMiddleware(lambda request: None)
-        factory = RequestFactory()
-        request = factory.get("/complete/google-oauth2/")
-        exception = AuthCanceled("google-oauth2", "User cancelled")
+        self.middleware = SocialAuthExceptionMiddleware(lambda request: None)
+        self.factory = RequestFactory()
 
-        response = middleware.process_exception(request, exception)
+    @parameterized.expand(
+        [
+            (
+                "oauth_cancelled_on_complete",
+                "/complete/google-oauth2/",
+                AuthCanceled("google-oauth2", "User cancelled"),
+                "/login?error_code=oauth_cancelled",
+            ),
+            (
+                "saml_sso_enforced",
+                "/complete/saml/",
+                AuthFailed("saml", "saml_sso_enforced"),
+                "/login?error_code=saml_sso_enforced",
+            ),
+            (
+                "google_sso_enforced",
+                "/complete/google-oauth2/",
+                AuthFailed("google-oauth2", "google_sso_enforced"),
+                "/login?error_code=google_sso_enforced",
+            ),
+            (
+                "github_sso_enforced",
+                "/complete/github/",
+                AuthFailed("github", "github_sso_enforced"),
+                "/login?error_code=github_sso_enforced",
+            ),
+            (
+                "gitlab_sso_enforced",
+                "/complete/gitlab/",
+                AuthFailed("gitlab", "gitlab_sso_enforced"),
+                "/login?error_code=gitlab_sso_enforced",
+            ),
+            (
+                "generic_sso_enforced",
+                "/complete/saml/",
+                AuthFailed("saml", "sso_enforced"),
+                "/login?error_code=sso_enforced",
+            ),
+        ]
+    )
+    def test_redirects_with_expected_url(self, _name, path, exception, expected_url):
+        request = self.factory.get(path)
+        response = self.middleware.process_exception(request, exception)
 
         self.assertIsNotNone(response)
         self.assertEqual(response.status_code, status.HTTP_302_FOUND)
-        self.assertEqual(response.url, "/login?error_code=oauth_cancelled")
+        self.assertEqual(response.url, expected_url)
+
+    @parameterized.expand(
+        [
+            (
+                "auth_failed_generic_on_complete",
+                "/complete/saml/",
+                AuthFailed("saml", "SAML not configured for this user."),
+            ),
+            (
+                "auth_missing_parameter_on_complete",
+                "/complete/saml/",
+                AuthMissingParameter("saml", "email"),
+            ),
+            (
+                "auth_failed_on_login_path",
+                "/login/saml/",
+                AuthFailed("saml", "SAML not configured for this user."),
+            ),
+        ]
+    )
+    def test_redirects_with_social_login_failure(self, _name, path, exception):
+        request = self.factory.get(path)
+        response = self.middleware.process_exception(request, exception)
+
+        self.assertIsNotNone(response)
+        self.assertEqual(response.status_code, status.HTTP_302_FOUND)
+        self.assertIn("error_code=social_login_failure", response.url)
+        self.assertIn("error_detail=", response.url)
+
+    @parameterized.expand(
+        [
+            (
+                "non_auth_exception_on_oauth_path",
+                "/complete/saml/",
+                ValueError("some random error"),
+            ),
+            (
+                "auth_failed_on_non_oauth_path",
+                "/api/some-endpoint/",
+                AuthFailed("saml", "some error"),
+            ),
+        ]
+    )
+    def test_returns_none_for_unhandled_cases(self, _name, path, exception):
+        request = self.factory.get(path)
+        response = self.middleware.process_exception(request, exception)
+
+        self.assertIsNone(response)
 
 
 @pytest.mark.parametrize(
