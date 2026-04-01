@@ -15,7 +15,7 @@ import {
     toCloudRegion,
 } from '@/lib/constants'
 import { handleToolError } from '@/lib/errors'
-import { buildInstructionsV2 } from '@/lib/instructions'
+import { buildInstructionsV1, buildInstructionsV2 } from '@/lib/instructions'
 import { formatResponse } from '@/lib/response'
 import { SessionManager } from '@/lib/SessionManager'
 import { StateManager } from '@/lib/StateManager'
@@ -27,10 +27,6 @@ import INSTRUCTIONS_TEMPLATE_V1 from '@/templates/instructions-v1.md'
 import INSTRUCTIONS_TEMPLATE_V2 from '@/templates/instructions-v2.md'
 import type { CloudRegion, Context, State, Tool } from '@/tools/types'
 import type { AnalyticsMetadata, WithAnalytics } from '@/ui-apps/types'
-
-function buildInstructions(groupTypes?: GroupType[]): string {
-    return buildInstructionsV2(INSTRUCTIONS_TEMPLATE_V2, guidelines, groupTypes)
-}
 
 export type RequestProperties = {
     userHash: string
@@ -59,6 +55,8 @@ export class MCP extends McpAgent<Env> {
         aiConsentGiven: undefined,
         aiConsentFetchedAt: undefined,
     }
+
+    private readonly CACHE_TTL_MS = 10 * 60 * 1000 // 10 minutes
 
     _cache: DurableObjectCache<State> | undefined
 
@@ -415,8 +413,7 @@ export class MCP extends McpAgent<Env> {
     async init(): Promise<void> {
         const { features, version, organizationId, projectId, readOnly } = this.requestProperties
 
-        // Pre-seed cache and fetch group types in parallel
-        const groupTypesPromise = projectId ? this.getOrFetchGroupTypes(projectId) : Promise.resolve(undefined)
+        // Seed cache with header-provided IDs before any fetches
         if (organizationId) {
             await this.cache.set('orgId', organizationId)
         }
@@ -424,9 +421,23 @@ export class MCP extends McpAgent<Env> {
             await this.cache.set('projectId', projectId)
         }
 
-        // Resolve group types (started above in parallel with cache seeding)
-        const groupTypes = await groupTypesPromise
-        const instructions = version === 2 ? buildInstructions(groupTypes) : INSTRUCTIONS_TEMPLATE_V1
+        const context = await this.getContext()
+
+        // Resolve defaults if headers didn't provide org/project
+        if (!organizationId || !projectId) {
+            await context.stateManager.setDefaultOrganizationAndProject()
+        }
+
+        // Fetch group types and metadata in parallel (cache is now seeded)
+        const resolvedProjectId = projectId || (await this.cache.get('projectId'))
+        const [groupTypes, metadata] = await Promise.all([
+            resolvedProjectId ? this.getOrFetchGroupTypes(resolvedProjectId) : Promise.resolve(undefined),
+            context.stateManager.getCachedOrFetchMetadata(),
+        ])
+        const instructions =
+            version === 2
+                ? buildInstructionsV2(INSTRUCTIONS_TEMPLATE_V2, guidelines, groupTypes, metadata)
+                : buildInstructionsV1(INSTRUCTIONS_TEMPLATE_V1, metadata)
 
         this.server = new McpServer({ name: 'PostHog', version: '1.0.0' }, { instructions })
 
@@ -438,8 +449,6 @@ export class MCP extends McpAgent<Env> {
         } else if (organizationId) {
             excludeTools.push('switch-organization')
         }
-
-        const context = await this.getContext()
 
         // Register prompts and resources
         await registerPrompts(this.server)
@@ -468,47 +477,62 @@ export class MCP extends McpAgent<Env> {
         }
     }
 
-    private async getOrFetchGroupTypes(projectId: string): Promise<GroupType[] | undefined> {
-        const GROUP_TYPES_TTL_MS = 5 * 60 * 1000 // 5 minutes
-
+    /**
+     * Generic stale-while-revalidate cache helper.
+     * Returns cached data immediately if fresh; if stale, returns cached data and revalidates in the background;
+     * if missing, fetches synchronously.
+     */
+    private async getOrFetchCached<D extends keyof State, T extends keyof State>(opts: {
+        name: string
+        cacheKey: D
+        fetchedAtKey: T
+        fetcher: () => Promise<State[D]>
+    }): Promise<State[D] | undefined> {
         try {
-            const cached = await this.cache.get(`groupTypes:${projectId}`)
-            const fetchedAt = await this.cache.get(`groupTypesFetchedAt:${projectId}`)
-            const isStale = !fetchedAt || Date.now() - fetchedAt > GROUP_TYPES_TTL_MS
+            const cached = await this.cache.get(opts.cacheKey)
+            const fetchedAt = (await this.cache.get(opts.fetchedAtKey)) as number | undefined
+            const isStale = !fetchedAt || Date.now() - fetchedAt > this.CACHE_TTL_MS
 
             if (cached !== undefined && !isStale) {
                 return cached
             }
 
+            const fetchAndCache = async (): Promise<State[D]> => {
+                const data = await opts.fetcher()
+                await this.cache.set(opts.cacheKey, data)
+                await this.cache.set(opts.fetchedAtKey, Date.now() as State[T])
+                return data
+            }
+
             if (cached !== undefined) {
-                // Stale — revalidate in background, return cached immediately
                 this.ctx.waitUntil(
-                    this.fetchAndCacheGroupTypes(projectId).catch((error) => {
+                    fetchAndCache().catch((error) => {
                         getPostHogClient(!!CUSTOM_API_BASE_URL).captureException(error, undefined, {
                             tag: 'max_ai',
-                            context: 'group_types_background_revalidation',
+                            context: `${opts.name}_background_revalidation`,
                         })
                     })
                 )
                 return cached
             }
 
-            // No cache — fetch synchronously
-            return await this.fetchAndCacheGroupTypes(projectId)
+            return await fetchAndCache()
         } catch (error) {
             getPostHogClient(!!CUSTOM_API_BASE_URL).captureException(error, undefined, {
                 tag: 'max_ai',
-                context: 'get_or_fetch_group_types',
+                context: `get_or_fetch_${opts.name}`,
             })
             return undefined
         }
     }
 
-    private async fetchAndCacheGroupTypes(projectId: string): Promise<GroupType[]> {
+    private async getOrFetchGroupTypes(projectId: string): Promise<GroupType[] | undefined> {
         const api = await this.api()
-        const groupTypes = await api.getGroupTypes(projectId)
-        await this.cache.set(`groupTypes:${projectId}`, groupTypes)
-        await this.cache.set(`groupTypesFetchedAt:${projectId}`, Date.now())
-        return groupTypes
+        return this.getOrFetchCached({
+            name: 'group_types',
+            cacheKey: `groupTypes:${projectId}`,
+            fetchedAtKey: `groupTypesFetchedAt:${projectId}`,
+            fetcher: async () => api.getGroupTypes(projectId),
+        })
     }
 }
