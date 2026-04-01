@@ -339,9 +339,9 @@ snapshots:
     components-errors-error-display--safari-script-error--light:
         hash: v1.k794b7964.e38444b23eba1c4e5491ad22cc50766413bba8d86066bad3ded5de5a24d7e180.-B8a9-rW8X90LyrV_-llXT0zKP9hBnBt21XrO4AuE84
     components-errors-error-display--sentry-stack-trace--dark:
-        hash: v1.k794b7964.e818bb924d72979f92f5f4fa9b91bd5a05e8a11cf38d935621f28d2746136555.uAKfZbq03sMHvf7r5uw90aVk6sDvD46UJaOt4uPHe5A
+        hash: v1.k794b7964.1916076ff798cdbf5343b596b4ecf14e1b3aa96bd3d17ce2987fc113c38351b0.rjuxdPwLUuXOA7MJf0A9yfpo2Ax9Vn2EBudU7q3nhh8
     components-errors-error-display--sentry-stack-trace--light:
-        hash: v1.k794b7964.5918296aff2b0001ece6984fc96032f677aee7e12112820f17f1cb1dcf9799c9.NhQn5Z9M98OSvEAwRHnvfKEebWIsg_mT6uqxF59Gcho
+        hash: v1.k794b7964.dfc9f923962382973c7543ca7ada9f1f31c95ee232a64c665338c7fe733aa672.L0h6GieDkvHz2JjgTpVLqyM640083EOYcmL0L745s5g
     components-errors-error-display--stack-trace-with-line-context--dark:
         hash: v1.k794b7964.53c4abf9f63457d7357d6d3553012300dd77ffbe852e647e50ea9bf009b8fcd8.quPu3Vl6_ORZ3qIv2fkd9qDhiMOViHaz_iNIix7w1zc
     components-errors-error-display--stack-trace-with-line-context--light:
@@ -5337,9 +5337,9 @@ snapshots:
     scenes-app-project-homepage--no-primary-dashboard--light:
         hash: v1.k794b7964.f5eb5be7b8e8de7ddf63830a02976ee9d99975fa343f84bc5a87ac11bfb3bc2f.hqBHrX-J0ggqhwIlXeqVPOPuTlhH0iPDJMhoWJuw0-0
     scenes-app-project-homepage--project-homepage--dark:
-        hash: v1.k794b7964.3211931946dc9a038b2156413d0ea51ec1b3c5a1539f38c8090a59f18c928106.VoSEBAO68h51rO2_T1dMANic2Jsc55mC9AJaErrejjU
+        hash: v1.k794b7964.c21ef66ae1a97923c829fa6fb87f84f40ab7c13dcd32059944a172996e1283b1.KrlNA_ks8NUx3ZQs5JyBch3DS0SXkPmXT9IMldz3nM8
     scenes-app-project-homepage--project-homepage--light:
-        hash: v1.k794b7964.7b2cbe86739662352b8591f6d041e64811e43d973bb210209a81a2ebcb6ea410.uF7B4YWDxyusHgAVejr7pmGpEqvrgigdjhEHm2I1qXY
+        hash: v1.k794b7964.e231a87b2353fda6b672835b8413fe824964c28622c72da61b07430329edbdfd.yB7mj3_qMIOH6y9rFPj4v27SAz22M5rtt1QH0xVlBuI
     scenes-app-revenue-analytics--revenue-analytics-dashboard--dark:
         hash: v1.k794b7964.406412e8c95339e9ab64271f6dfc363b2f47123200823722a09ac67cb74e6429.cdUelwHMlacDebp7LAzOnQXGdL0FwZj6Hwt-gQ3eln0
     scenes-app-revenue-analytics--revenue-analytics-dashboard--light:
