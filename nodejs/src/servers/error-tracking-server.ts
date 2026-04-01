@@ -9,20 +9,26 @@ import {
 } from '../cdp/hog-transformations/hog-transformer.service'
 import { EncryptedFields } from '../cdp/utils/encryption-utils'
 import { CommonConfig } from '../common/config'
-import { defaultConfig } from '../config/config'
+import { defaultConfig, overrideConfigWithEnv } from '../config/config'
 import { createIngestionRedisConnectionConfig } from '../config/redis-pools'
 import {
     DatabaseConnectionConfig,
     KafkaBrokerConfig,
     KafkaConsumerBaseConfig,
+    KafkaProducerEnvConfig,
     PersonHogConfig,
     RedisConnectionsConfig,
+    getDefaultKafkaProducerEnvConfig,
 } from '../ingestion/config'
-import { ErrorTrackingConsumerConfig } from '../ingestion/error-tracking/config'
-import { ERROR_TRACKING_OUTPUT_DEFINITIONS } from '../ingestion/error-tracking/config/outputs'
-import { PRODUCER_CONFIG_MAP, ProducerName } from '../ingestion/error-tracking/config/producers'
+import {
+    ErrorTrackingConsumerConfig,
+    ErrorTrackingOutputsConfig,
+    getDefaultErrorTrackingOutputsConfig,
+} from '../ingestion/error-tracking/config'
+import { registerErrorTrackingOutputs } from '../ingestion/error-tracking/config/outputs'
 import { ErrorTrackingConsumer } from '../ingestion/error-tracking/error-tracking-consumer'
-import { KafkaProducerRegistry, resolveIngestionOutputs } from '../ingestion/outputs'
+import { ProducerName, registerProducers } from '../ingestion/error-tracking/outputs/producers'
+import { KafkaProducerRegistry } from '../ingestion/outputs'
 import { buildGroupRepository, buildPersonRepository, createPersonHogClient } from '../ingestion/personhog'
 import { PluginServerService, RedisPool } from '../types'
 import { ServerCommands } from '../utils/commands'
@@ -51,6 +57,8 @@ export type ErrorTrackingServerConfig = BaseServerConfig &
     ErrorTrackingConsumerConfig &
     HogTransformerServiceConfig &
     KafkaBrokerConfig &
+    KafkaProducerEnvConfig &
+    ErrorTrackingOutputsConfig &
     DatabaseConnectionConfig &
     RedisConnectionsConfig &
     KafkaConsumerBaseConfig &
@@ -76,7 +84,12 @@ export class ErrorTrackingServer implements NodeServer {
     private pubsub?: PubSub
 
     constructor(config: Partial<ErrorTrackingServerConfig> = {}) {
-        this.config = { ...defaultConfig, ...config }
+        this.config = {
+            ...defaultConfig,
+            ...overrideConfigWithEnv(getDefaultKafkaProducerEnvConfig()),
+            ...overrideConfigWithEnv(getDefaultErrorTrackingOutputsConfig()),
+            ...config,
+        }
         this.lifecycle = new ServerLifecycle(this.config)
     }
 
@@ -104,8 +117,8 @@ export class ErrorTrackingServer implements NodeServer {
         logger.info('👍', 'Postgres Router ready')
 
         logger.info('🤔', 'Connecting to Kafka...')
-        this.producerRegistry = new KafkaProducerRegistry(this.config.KAFKA_CLIENT_RACK, PRODUCER_CONFIG_MAP)
-        const outputs = await resolveIngestionOutputs(this.producerRegistry, ERROR_TRACKING_OUTPUT_DEFINITIONS)
+        this.producerRegistry = await registerProducers(this.config.KAFKA_CLIENT_RACK).build(this.config)
+        const outputs = registerErrorTrackingOutputs().build(this.producerRegistry, this.config)
         logger.info('👍', 'Kafka ready')
 
         logger.info('🤔', 'Connecting to ingestion Redis...')
