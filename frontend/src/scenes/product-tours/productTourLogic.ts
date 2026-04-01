@@ -170,6 +170,27 @@ function buildDraftPayload(formValues: ProductTourForm): Record<string, any> {
     }
 }
 
+/** Avoid overwriting the form from draft polls while editing; pairs with PropertyFilters prop-sync behavior. */
+function shouldApplyProductTourFormFromServer(options: {
+    hasUnsavedLocalChanges: boolean
+    isEditing: boolean
+    isOwnEcho: boolean
+    cache: { formHydratedWhileEditing?: boolean }
+}): boolean {
+    const { hasUnsavedLocalChanges, isEditing, isOwnEcho, cache } = options
+    if (hasUnsavedLocalChanges) {
+        return false
+    }
+    if (!isEditing) {
+        return !isOwnEcho
+    }
+    if (!cache.formHydratedWhileEditing) {
+        cache.formHydratedWhileEditing = true
+        return true
+    }
+    return isOwnEcho
+}
+
 export const productTourLogic = kea<productTourLogicType>([
     path(['scenes', 'product-tours', 'productTourLogic']),
     props({} as ProductTourLogicProps),
@@ -592,7 +613,14 @@ export const productTourLogic = kea<productTourLogicType>([
                     values.isEditingProductTour &&
                     isEqual(incomingPayload, cache.lastSentDraftPayload ?? cache.lastDraftPayload)
 
-                if (!isOwnEcho && !hasUnsavedLocalChanges) {
+                const shouldApplyForm = shouldApplyProductTourFormFromServer({
+                    hasUnsavedLocalChanges,
+                    isEditing: values.isEditingProductTour,
+                    isOwnEcho,
+                    cache,
+                })
+
+                if (shouldApplyForm) {
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     ;(actions.setProductTourFormValues as any)(formValues)
                     cache.lastDraftPayload = incomingPayload
@@ -608,6 +636,9 @@ export const productTourLogic = kea<productTourLogicType>([
             }
         },
         editingProductTour: ({ editing }) => {
+            if (!editing) {
+                cache.formHydratedWhileEditing = false
+            }
             if (editing && props.id !== 'new') {
                 cache.disposables.add(() => {
                     const canFetch = (): boolean =>
