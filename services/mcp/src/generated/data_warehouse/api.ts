@@ -51,6 +51,7 @@ export const WarehouseSavedQueriesCreateBody = /* @__PURE__ */ zod
             .describe(
                 'HogQL query definition as a JSON object with a "query" key containing the SQL string and a "kind" key containing the query type. Example: {"query": "SELECT * FROM events LIMIT 100", "kind": "HogQLQuery"}'
             ),
+        dag_id: zod.string().nullish().describe('Optional DAG to place this view into'),
         is_test: zod.boolean().optional().describe('Whether this view is for testing only and will auto-expire.'),
     })
     .describe(
@@ -102,6 +103,7 @@ export const WarehouseSavedQueriesPartialUpdateBody = /* @__PURE__ */ zod
             .string()
             .nullish()
             .describe('Activity log ID from the last known edit. Used for conflict detection.'),
+        dag_id: zod.string().nullish().describe('Optional DAG to place this view into'),
         is_test: zod.boolean().optional().describe('Whether this view is for testing only and will auto-expire.'),
     })
     .describe(
@@ -157,6 +159,7 @@ export const WarehouseSavedQueriesMaterializeCreateBody = /* @__PURE__ */ zod
             .boolean()
             .nullish()
             .describe('If true, skip column inference and validation. For saving drafts.'),
+        dag_id: zod.string().nullish().describe('Optional DAG to place this view into'),
         is_test: zod.boolean().optional().describe('Whether this view is for testing only and will auto-expire.'),
     })
     .describe(
@@ -201,6 +204,7 @@ export const WarehouseSavedQueriesRevertMaterializationCreateBody = /* @__PURE__
             .boolean()
             .nullish()
             .describe('If true, skip column inference and validation. For saving drafts.'),
+        dag_id: zod.string().nullish().describe('Optional DAG to place this view into'),
         is_test: zod.boolean().optional().describe('Whether this view is for testing only and will auto-expire.'),
     })
     .describe(
@@ -244,6 +248,7 @@ export const WarehouseSavedQueriesRunCreateBody = /* @__PURE__ */ zod
             .boolean()
             .nullish()
             .describe('If true, skip column inference and validation. For saving drafts.'),
+        dag_id: zod.string().nullish().describe('Optional DAG to place this view into'),
         is_test: zod.boolean().optional().describe('Whether this view is for testing only and will auto-expire.'),
     })
     .describe(
