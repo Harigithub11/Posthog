@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from langchain_core.runnables import RunnableConfig
 
-from ee.hogai.tools.read_taxonomy.core import ReadEvents, execute_taxonomy_query
+from ee.hogai.tools.read_taxonomy.core import ReadEvents, ReadEventSamplePropertyValues, execute_taxonomy_query
 from ee.hogai.tools.read_taxonomy.tool import ReadTaxonomyTool
 from ee.hogai.utils.types import AssistantState
 from ee.hogai.utils.types.base import NodePath
@@ -68,3 +68,15 @@ class TestReadTaxonomyTool(NonAtomicBaseTest):
 
         self.assertIn("events:", result)
         mock_format_events.assert_called_once_with([], self.team, limit=500, offset=0)
+
+    @patch("ee.hogai.tools.read_taxonomy.core.TaxonomyAgentToolkit")
+    def test_execute_taxonomy_query_delegates_sample_property_values_to_toolkit(self, mock_toolkit_class):
+        mock_toolkit_class.return_value.retrieve_event_or_action_property_values.return_value = "gpt-4, claude-3"
+
+        query = ReadEventSamplePropertyValues(event_name="$ai_generation", property_name="$ai_model")
+        result = execute_taxonomy_query(query, mock_toolkit_class.return_value, self.team)
+
+        self.assertEqual(result, "gpt-4, claude-3")
+        mock_toolkit_class.return_value.retrieve_event_or_action_property_values.assert_called_once_with(
+            "$ai_generation", "$ai_model"
+        )
