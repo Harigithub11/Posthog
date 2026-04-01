@@ -118,7 +118,6 @@ export const maxThreadLogic = kea<maxThreadLogicType>([
     props({} as MaxThreadLogicProps),
 
     propsChanged(({ actions, values, props }) => {
-        // Streaming is active, do not update the thread
         if (!props.conversation) {
             return
         }
@@ -1158,8 +1157,6 @@ export const maxThreadLogic = kea<maxThreadLogicType>([
         },
 
         loadConversationHistorySuccess: ({ conversationHistory, payload }) => {
-            // payload is an object with doNotUpdateCurrentThread for loadConversationHistory,
-            // but it's a string (conversationId) for loadConversation
             const doNotUpdate = typeof payload === 'object' && payload?.doNotUpdateCurrentThread
             if (doNotUpdate || values.autoRun || values.streamingActive) {
                 return
@@ -1173,7 +1170,6 @@ export const maxThreadLogic = kea<maxThreadLogicType>([
                 return
             }
 
-            // Sync conversation data
             actions.setConversation(conversation)
 
             if (conversation.status === ConversationStatus.InProgress) {
@@ -1182,6 +1178,7 @@ export const maxThreadLogic = kea<maxThreadLogicType>([
                 }, 0)
             }
         },
+
         selectCommand: ({ command }) => {
             if (command.arg) {
                 actions.setQuestion(command.name + ' ')

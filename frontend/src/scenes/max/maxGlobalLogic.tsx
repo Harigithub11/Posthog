@@ -98,9 +98,10 @@ export const maxGlobalLogic = kea<maxGlobalLogicType>([
         dismissDataProcessing: true,
     }),
 
-    loaders(({ values }) => ({
+    loaders(() => ({
+        // Lightweight list for the sidebar/navbar — no messages, no checkpoint fetching
         conversationHistory: [
-            [] as ConversationDetail[],
+            [] as Conversation[],
             {
                 loadConversationHistory: async (
                     // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Used for conversation restoration
@@ -109,22 +110,17 @@ export const maxGlobalLogic = kea<maxGlobalLogicType>([
                         doNotUpdateCurrentThread?: boolean
                     }
                 ) => {
-                    const response = await api.conversations.list()
+                    const response = await api.conversations.basicList()
                     return response.results
                 },
-
+            },
+        ],
+        // Full conversation detail hydrated on demand when a thread is opened
+        activeConversation: [
+            null as ConversationDetail | null,
+            {
                 loadConversation: async (conversationId: string) => {
-                    const response = await api.conversations.get(conversationId)
-                    const itemIndex = values.conversationHistory.findIndex((c) => c.id === conversationId)
-
-                    if (itemIndex !== -1) {
-                        return [
-                            ...values.conversationHistory.slice(0, itemIndex),
-                            response,
-                            ...values.conversationHistory.slice(itemIndex + 1),
-                        ]
-                    }
-                    return [response, ...values.conversationHistory]
+                    return await api.conversations.get(conversationId)
                 },
             },
         ],
@@ -134,6 +130,14 @@ export const maxGlobalLogic = kea<maxGlobalLogicType>([
         conversationHistory: {
             prependOrReplaceConversation: (state, { conversation }) => {
                 return mergeConversationHistory(state, conversation)
+            },
+        },
+        activeConversation: {
+            prependOrReplaceConversation: (state, { conversation }) => {
+                if ('messages' in conversation && state?.id === conversation.id) {
+                    return conversation as ConversationDetail
+                }
+                return state
             },
         },
         registeredToolMap: [

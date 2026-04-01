@@ -3,6 +3,7 @@ from typing import Any
 import pydantic
 from asgiref.sync import async_to_sync
 from langgraph.graph.state import CompiledStateGraph
+from opentelemetry import trace
 from rest_framework import serializers
 
 from posthog.api.shared import UserBasicSerializer
@@ -16,6 +17,8 @@ from ee.hogai.utils.helpers import should_output_assistant_message
 from ee.hogai.utils.types import AssistantState
 from ee.hogai.utils.types.composed import AssistantMaxGraphState
 from ee.models.assistant import Conversation
+
+tracer = trace.get_tracer(__name__)
 
 _conversation_fields = [
     "id",
@@ -69,6 +72,7 @@ class ConversationSerializer(ConversationMinimalSerializer):
     is_sandbox = serializers.SerializerMethodField()
     pending_approvals = serializers.SerializerMethodField()
 
+    @tracer.start_as_current_span("conversations.serializer.get_messages")
     def get_messages(self, conversation: Conversation) -> list[dict[str, Any]]:
         if conversation.messages_json is not None:
             return conversation.messages_json
@@ -82,10 +86,7 @@ class ConversationSerializer(ConversationMinimalSerializer):
             user = self.context["user"]
             artifact_manager = ArtifactManager(team, user)
             enriched_messages = async_to_sync(artifact_manager.aenrich_messages)(list(state.messages))
-            messages = [
-                message.model_dump() for message in enriched_messages if should_output_assistant_message(message)
-            ]
-            return messages
+            return [message.model_dump() for message in enriched_messages if should_output_assistant_message(message)]
         except Exception as e:
             capture_exception(e)
             return []

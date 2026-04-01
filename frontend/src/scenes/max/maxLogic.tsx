@@ -151,6 +151,8 @@ export const maxLogic = kea<maxLogicType>([
                 'toolSuggestions',
                 'conversationHistory',
                 'conversationHistoryLoading',
+                'activeConversation',
+                'activeConversationLoading',
             ],
             maxSettingsLogic,
             ['coreMemory'],
@@ -162,7 +164,13 @@ export const maxLogic = kea<maxLogicType>([
             maxContextLogic,
             ['resetContext'],
             maxGlobalLogic,
-            ['loadConversationHistory', 'prependOrReplaceConversation', 'loadConversationHistorySuccess'],
+            [
+                'loadConversationHistory',
+                'loadConversation',
+                'loadConversationFailure',
+                'prependOrReplaceConversation',
+                'loadConversationHistorySuccess',
+            ],
         ],
     })),
 
@@ -274,10 +282,10 @@ export const maxLogic = kea<maxLogicType>([
             (cb: ((filters: RecordingUniversalFilters) => void) | null) => cb,
         ],
         conversation: [
-            (s) => [s.conversationHistory, s.conversationId],
-            (conversationHistory, conversationId) => {
-                if (conversationId) {
-                    return conversationHistory.find((c) => c.id === conversationId) ?? null
+            (s) => [s.activeConversation, s.conversationId],
+            (activeConversation, conversationId): ConversationDetail | null => {
+                if (activeConversation?.id === conversationId) {
+                    return activeConversation
                 }
                 return null
             },
@@ -309,9 +317,9 @@ export const maxLogic = kea<maxLogicType>([
         ],
 
         conversationLoading: [
-            (s) => [s.conversationHistory, s.conversationHistoryLoading, s.conversationId, s.conversation],
-            (conversationHistory, conversationHistoryLoading, conversationId, conversation) => {
-                return !conversationHistory.length && conversationHistoryLoading && !!conversationId && !conversation
+            (s) => [s.conversationId, s.conversation, s.activeConversationLoading, s.conversationHistoryLoading],
+            (conversationId, conversation, activeConversationLoading, conversationHistoryLoading) => {
+                return !!conversationId && !conversation && (activeConversationLoading || conversationHistoryLoading)
             },
         ],
 
@@ -456,9 +464,18 @@ export const maxLogic = kea<maxLogicType>([
             if (conversation) {
                 actions.scrollThreadToBottom('instant')
             } else {
-                // If the conversation is not found, retrieve once the conversation status and reset if 404.
-                actions.pollConversation(values.conversationId, 0, 0)
+                // Hydrate full detail via activeConversation loader, falling back to poll if not found
+                actions.loadConversation(values.conversationId)
             }
+        },
+
+        loadConversationFailure: ({ errorObject }) => {
+            if (errorObject?.status === 404 && values.conversationId) {
+                // Conversation may not be persisted yet — fall back to polling
+                actions.pollConversation(values.conversationId, 0, 0)
+                return
+            }
+            lemonToast.error(errorObject?.data?.detail || 'Failed to load the chat.')
         },
 
         /**
@@ -518,6 +535,9 @@ export const maxLogic = kea<maxLogicType>([
             const conversation = values.conversationHistory.find((c) => c.id === conversationId)
 
             if (conversation) {
+                if (!('messages' in conversation)) {
+                    actions.loadConversation(conversationId)
+                }
                 actions.scrollThreadToBottom('instant')
             } else if (!values.conversationHistoryLoading) {
                 actions.pollConversation(conversationId, 0, 200)
@@ -927,41 +947,20 @@ export const RESEARCH_SUGGESTIONS_DATA: readonly SuggestionGroup[] = [
     },
 ]
 
-/**
- * Merges a new conversation into the conversation history.
- */
 export function mergeConversationHistory(
-    state: ConversationDetail[],
+    state: Conversation[],
     newConversation: ConversationDetail | Conversation
-): ConversationDetail[] {
-    const index = state.findIndex((c) => c.id === newConversation.id)
+): Conversation[] {
+    const { messages: _, ...basic } =
+        'messages' in newConversation ? newConversation : { messages: undefined, ...newConversation }
+    const index = state.findIndex((c) => c.id === basic.id)
     if (index !== -1) {
-        return [...state.slice(0, index), mergeConversations(newConversation, state[index]), ...state.slice(index + 1)]
+        return [...state.slice(0, index), { ...state[index], ...basic }, ...state.slice(index + 1)]
     }
 
-    // Insert and make sure it's sorted by date
-    return [mergeConversations(newConversation), ...state].sort((a, b) => {
+    return [basic, ...state].sort((a, b) => {
         const dateA = a.updated_at ? dayjs(a.updated_at).valueOf() : 0
         const dateB = b.updated_at ? dayjs(b.updated_at).valueOf() : 0
         return dateB - dateA
     })
-}
-
-/**
- * Stream returns a `Conversation` object, which doesn't have a `messages` property.
- * However, when we load the conversation history, we get `ConversationDetail` objects.
- * This function merges the two types so that we can use the same logic for both.
- */
-export function mergeConversations(
-    newObj: Conversation | ConversationDetail,
-    oldObj?: ConversationDetail
-): ConversationDetail {
-    if ('messages' in newObj) {
-        return newObj
-    }
-
-    return {
-        ...newObj,
-        messages: oldObj?.messages ?? [],
-    }
 }
