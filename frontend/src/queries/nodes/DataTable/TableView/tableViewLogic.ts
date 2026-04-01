@@ -60,7 +60,7 @@ function getViewData(
     }
 }
 
-function getQueryFromView(
+export function getQueryFromView(
     query: TableViewSupportedQueryType,
     view: ColumnConfigurationApi
 ): TableViewSupportedQueryType {
@@ -73,9 +73,21 @@ function getQueryFromView(
     }
 
     const rawFilters = (view.filters || []) as AnyPropertyFilter[]
-    const properties = rawFilters.filter((filter) => filter.key !== 'event' && filter.key !== 'events')
-    const event = rawFilters.find((filter) => filter.key === 'event')?.value
-    const events = rawFilters.find((filter) => filter.key === 'events')?.value
+    const properties = rawFilters.filter((filter) => {
+        if (!('operator' in filter)) {
+            return true
+        }
+        const isPromotedEvent = filter.key === 'event' && filter.operator === PropertyOperator.Exact
+        const isPromotedEvents = filter.key === 'events' && filter.operator === PropertyOperator.In
+        return !isPromotedEvent && !isPromotedEvents
+    })
+
+    const event = rawFilters.findLast(
+        (filter) => 'operator' in filter && filter.key === 'event' && filter.operator === PropertyOperator.Exact
+    )?.value
+    const events = rawFilters.findLast(
+        (filter) => 'operator' in filter && filter.key === 'events' && filter.operator === PropertyOperator.In
+    )?.value
     return {
         ...query,
         select: view.columns || [],
