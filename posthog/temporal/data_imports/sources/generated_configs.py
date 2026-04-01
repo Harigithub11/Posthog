@@ -547,7 +547,7 @@ class OutreachSourceConfig(config.Config):
 
 @config.config
 class PaddleSourceConfig(config.Config):
-    pass
+    paddle_api_key: str
 
 
 @config.config
