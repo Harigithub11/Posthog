@@ -16,12 +16,13 @@ import { logger } from '../../utils/logger'
 import { PubSub } from '../../utils/pubsub'
 import { TeamManager } from '../../utils/team-manager'
 import { CdpCoreServicesConfig } from '../cdp-services'
-import { HogExecutorService } from '../services/hog-executor.service'
+import { HogExecutorService, MAX_FETCH_TIMEOUT_MS, cdpTrackedFetch } from '../services/hog-executor.service'
 import { HogInputsService } from '../services/hog-inputs.service'
 import { LegacyPluginExecutorService } from '../services/legacy-plugin-executor.service'
 import { HogFunctionManagerService } from '../services/managers/hog-function-manager.service'
 import { IntegrationManagerService } from '../services/managers/integration-manager.service'
 import { EmailService } from '../services/messaging/email.service'
+import { PushNotificationService } from '../services/messaging/push-notification.service'
 import { RecipientTokensService } from '../services/messaging/recipient-tokens.service'
 import { HogFunctionMonitoringService } from '../services/monitoring/hog-function-monitoring.service'
 import { HogWatcherService, HogWatcherState } from '../services/monitoring/hog-watcher.service'
@@ -432,7 +433,8 @@ export function createHogTransformerService(
         poolMaxSize: config.REDIS_POOL_MAX_SIZE,
     })
     const hogFunctionManager = new HogFunctionManagerService(deps.postgres, deps.pubSub, deps.encryptedFields)
-    const hogInputsService = new HogInputsService(deps.integrationManager, config.ENCRYPTION_SALT_KEYS, config.SITE_URL)
+    const recipientTokensService = new RecipientTokensService(config.ENCRYPTION_SALT_KEYS, config.SITE_URL)
+    const hogInputsService = new HogInputsService(deps.integrationManager, recipientTokensService, deps.encryptedFields)
     const emailService = new EmailService(
         {
             sesAccessKeyId: config.SES_ACCESS_KEY_ID,
@@ -444,7 +446,10 @@ export function createHogTransformerService(
         config.ENCRYPTION_SALT_KEYS,
         config.SITE_URL
     )
-    const recipientTokensService = new RecipientTokensService(config.ENCRYPTION_SALT_KEYS, config.SITE_URL)
+    const pushNotificationService = new PushNotificationService(deps.integrationManager, deps.encryptedFields, {
+        trackedFetch: cdpTrackedFetch,
+        maxFetchTimeoutMs: MAX_FETCH_TIMEOUT_MS,
+    })
     const hogExecutor = new HogExecutorService(
         {
             hogCostTimingUpperMs: config.CDP_WATCHER_HOG_COST_TIMING_UPPER_MS,
@@ -456,7 +461,8 @@ export function createHogTransformerService(
         { teamManager: deps.teamManager, siteUrl: config.SITE_URL },
         hogInputsService,
         emailService,
-        recipientTokensService
+        recipientTokensService,
+        pushNotificationService
     )
     const pluginExecutor = new LegacyPluginExecutorService(deps.postgres, deps.geoipService)
     const hogFunctionMonitoringService = new HogFunctionMonitoringService(

@@ -234,6 +234,8 @@ export type MinimalAppMetric = {
         | 'email_blocked'
         | 'email_spam'
         | 'email_unsubscribed'
+        | 'push_sent'
+        | 'push_failed'
         | 'quota_limited'
     count: number
 }
@@ -336,6 +338,7 @@ export type HogFunctionInputSchemaType = {
         | 'native_email'
         | 'posthog_assignee'
         | 'posthog_ticket_tags'
+        | 'push_subscription'
     key: string
     label?: string
     choices?: { value: string; label: string }[]
@@ -348,6 +351,7 @@ export type HogFunctionInputSchemaType = {
     integration_key?: string
     requires_field?: string
     integration_field?: string
+    platform?: 'android' | 'ios'
     requiredScopes?: string
     /**
      * templating: true indicates the field supports templating. Alternatively
@@ -435,7 +439,7 @@ export type DBHogFunctionTemplate = {
 export type IntegrationType = {
     id: number
     team_id: number
-    kind: 'slack' | 'email' | 'oauth'
+    kind: 'slack' | 'email' | 'oauth' | 'firebase' | 'apple-push'
     config: Record<string, any>
     sensitive_config: Record<string, any>
 }
