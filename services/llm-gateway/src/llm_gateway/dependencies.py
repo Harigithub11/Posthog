@@ -14,6 +14,7 @@ from llm_gateway.rate_limiting.cost_refresh import ensure_costs_fresh
 from llm_gateway.rate_limiting.runner import ThrottleRunner
 from llm_gateway.rate_limiting.throttles import ThrottleContext
 from llm_gateway.request_context import get_request_id, set_throttle_context
+from llm_gateway.services.plan_resolver import resolve_plan_info
 
 logger = structlog.get_logger(__name__)
 
@@ -133,11 +134,16 @@ async def enforce_throttles(
     else:
         end_user_id = await _extract_end_user_id_from_body(request)
 
+    plan_info = await resolve_plan_info(request, user.user_id, product)
+
     context = ThrottleContext(
         user=user,
         product=product,
         request_id=get_request_id() or None,
         end_user_id=end_user_id,
+        plan_key=plan_info.plan_key,
+        in_trial_period=plan_info.in_trial_period,
+        seat_created_at=plan_info.seat_created_at,
     )
     request.state.throttle_context = context
     set_throttle_context(runner, context)
