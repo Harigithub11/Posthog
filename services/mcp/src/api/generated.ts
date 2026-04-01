@@ -18727,6 +18727,7 @@ export namespace Schemas {
 
     export interface NotificationEvent {
       id: string;
+      team_id: number;
       notification_type: string;
       priority: string;
       title: string;
