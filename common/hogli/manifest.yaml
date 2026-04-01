@@ -672,6 +672,9 @@ tools:
         bin_script: phrocs
         description: Run phrocs directly with a custom mprocs-format YAML config
         hidden: true
+    phrocs.bak:
+        bin_script: phrocs.bak
+        description: 'TODO: add description for phrocs.bak'
     ci:wait:for:docker:
         bin_script: ci-wait-for-docker
         description: Launch Docker Compose services in CI and later wait for readiness
@@ -692,6 +695,9 @@ utilities:
             - dev:reset
         description: Wipe everything and rebuild (node_modules, Python, Rust, then dev:reset)
         prompt: true
+    utilities:worktree:disconnect:
+        bin_script: worktree-disconnect
+        description: Disconnect worktree from main repo's shared environment (use own deps)
     utilities:posthog-worktree:
         bin_script: posthog-worktree
         description: Manage isolated git worktrees for PostHog development
