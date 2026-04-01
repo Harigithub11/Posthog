@@ -10,13 +10,14 @@ import {
     IconDashboard,
     IconGear,
     IconInfo,
+    IconLive,
     IconStethoscope,
     IconTerminal,
 } from '@posthog/icons'
 import { LemonButton, LemonInput, SideAction, Tooltip } from '@posthog/lemon-ui'
 
 import { FEATURE_FLAGS } from 'lib/constants'
-import { IconUnverifiedEvent } from 'lib/lemon-ui/icons'
+import { IconOpenInNew, IconUnverifiedEvent } from 'lib/lemon-ui/icons'
 import { featureFlagLogic } from 'lib/logic/featureFlagLogic'
 import { capitalizeFirstLetter } from 'lib/utils'
 import { SettingsBar, SettingsButton, SettingsToggle } from 'scenes/session-recordings/components/PanelSettings'
@@ -27,8 +28,11 @@ import {
     playerInspectorLogic,
 } from 'scenes/session-recordings/player/inspector/playerInspectorLogic'
 import { teamLogic } from 'scenes/teamLogic'
+import { urls } from 'scenes/urls'
 
 import { sidePanelSettingsLogic } from '~/layout/navigation-3000/sidepanel/panels/sidePanelSettingsLogic'
+
+import { logsIngestionLogic } from 'products/logs/frontend/components/SetupPrompt/logsIngestionLogic'
 
 import { SessionRecordingPlayerMode, sessionRecordingPlayerLogic } from '../sessionRecordingPlayerLogic'
 import { InspectorSearchInfo } from './components/InspectorSearchInfo'
@@ -267,6 +271,78 @@ function CommentsFilterSettingsButton(): JSX.Element {
     )
 }
 
+function LogsFilterSettingsButton(): JSX.Element {
+    const { logicProps } = useValues(sessionRecordingPlayerLogic)
+    const { allItemsByItemType, logsLoading } = useValues(playerInspectorLogic(logicProps))
+    const { hasLogs } = useValues(logsIngestionLogic)
+
+    const hasLogItems = allItemsByItemType['logs']?.length > 0
+    const sessionId = logicProps.sessionRecordingId
+
+    const logsUrlWithSessionFilter = `${urls.logs()}?filterGroup=${encodeURIComponent(
+        JSON.stringify({
+            type: 'AND',
+            values: [
+                {
+                    type: 'AND',
+                    values: [
+                        {
+                            key: 'session_id',
+                            value: sessionId,
+                            operator: 'exact',
+                            type: 'log_entry',
+                        },
+                    ],
+                },
+            ],
+        })
+    )}`
+
+    const upsellAction: SideAction | undefined =
+        !hasLogs && !logsLoading
+            ? {
+                  icon: <IconChevronDown />,
+                  dropdown: {
+                      closeOnClickInside: false,
+                      overlay: (
+                          <>
+                              <LemonButton
+                                  data-attr="player-inspector-logs-upsell"
+                                  icon={<IconGear />}
+                                  fullWidth
+                                  size="xsmall"
+                                  to="https://posthog.com/docs/logs"
+                                  targetBlank
+                              >
+                                  Set up PostHog Logs
+                              </LemonButton>
+                          </>
+                      ),
+                  },
+              }
+            : hasLogItems
+              ? {
+                    icon: <IconOpenInNew />,
+                    tooltip: 'View logs for this session',
+                    to: logsUrlWithSessionFilter,
+                    targetBlank: true,
+                }
+              : undefined
+
+    return (
+        <FilterSettingsButton
+            data-attr="player-inspector-logs-toggle-all"
+            type="logs"
+            icon={<IconLive />}
+            disabledReason={
+                logsLoading ? 'Loading logs...' : !hasLogItems ? 'There are no logs for this session' : undefined
+            }
+            upsellSideAction={upsellAction}
+            label="Logs"
+        />
+    )
+}
+
 export function PlayerInspectorControls(): JSX.Element {
     const { logicProps } = useValues(sessionRecordingPlayerLogic)
     const { searchQuery, miniFiltersByKey } = useValues(miniFiltersLogic)
@@ -289,6 +365,8 @@ export function PlayerInspectorControls(): JSX.Element {
                 {mode !== SessionRecordingPlayerMode.Sharing && <EventsFilterSettingsButton />}
                 <ConsoleFilterSettingsButton />
                 <NetworkFilterSettingsButton />
+                {featureFlags[FEATURE_FLAGS.SESSION_REPLAY_BACKEND_LOGS] &&
+                    mode !== SessionRecordingPlayerMode.Sharing && <LogsFilterSettingsButton />}
                 {mode !== SessionRecordingPlayerMode.Sharing && <CommentsFilterSettingsButton />}
                 {(window.IMPERSONATED_SESSION || featureFlags[FEATURE_FLAGS.SESSION_REPLAY_DOCTOR]) &&
                     mode !== SessionRecordingPlayerMode.Sharing && (

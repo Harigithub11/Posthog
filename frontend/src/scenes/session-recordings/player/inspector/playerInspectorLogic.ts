@@ -33,12 +33,15 @@ import {
 } from 'scenes/session-recordings/playlist/sessionRecordingsPlaylistLogic'
 import { sessionRecordingEventUsageLogic } from 'scenes/session-recordings/sessionRecordingEventUsageLogic'
 
-import { RecordingsQuery } from '~/queries/schema/schema-general'
+import { LogMessage, RecordingsQuery } from '~/queries/schema/schema-general'
 import { getCoreFilterDefinition } from '~/taxonomy/helpers'
 import {
     CommentType,
+    FilterLogicalOperator,
     MatchedRecordingEvent,
     PerformanceEvent,
+    PropertyFilterType,
+    PropertyOperator,
     RRWebRecordingConsoleLogPayload,
     RecordingConsoleLogV2,
     RecordingEventType,
@@ -78,7 +81,7 @@ export type RecordingComment = {
     timeInRecording: number
 }
 
-const _filterableItemTypes = ['events', 'console', 'network', 'comment', 'doctor'] as const
+const _filterableItemTypes = ['events', 'console', 'network', 'comment', 'doctor', 'logs'] as const
 const _itemTypes = [
     ..._filterableItemTypes,
     'performance',
@@ -172,6 +175,11 @@ export type InspectorListItemSummary = InspectorListItemBase & {
     errorCount: number | null
 }
 
+export type InspectorListItemLog = InspectorListItemBase & {
+    type: 'logs'
+    data: LogMessage
+}
+
 export type InspectorListItem =
     | InspectorListItemEvent
     | InspectorListItemConsole
@@ -185,6 +193,7 @@ export type InspectorListItem =
     | InspectorListItemInactivity
     | InspectorListItemAppState
     | InspectorListSessionChange
+    | InspectorListItemLog
 
 export interface PlayerInspectorLogicProps extends SessionRecordingPlayerLogicProps {
     matchingEventsMatchType?: MatchingEventsMatchType
@@ -454,6 +463,55 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
                     const response = await api.recordings.getMatchingEvents(toParams(params))
                     skipToEarliestEvent(response.results)
                     return response.results
+                },
+            },
+        ],
+        logs: [
+            [] as LogMessage[],
+            {
+                loadLogs: async () => {
+                    if (!values.featureFlags[FEATURE_FLAGS.SESSION_REPLAY_BACKEND_LOGS]) {
+                        return []
+                    }
+
+                    const sessionId = props.sessionRecordingId
+                    if (!sessionId || !values.start || !values.end) {
+                        return []
+                    }
+
+                    try {
+                        const response = await api.logs.query({
+                            query: {
+                                dateRange: {
+                                    date_from: values.start.toISOString(),
+                                    date_to: values.end.toISOString(),
+                                },
+                                filterGroup: {
+                                    type: FilterLogicalOperator.And,
+                                    values: [
+                                        {
+                                            type: FilterLogicalOperator.And,
+                                            values: [
+                                                {
+                                                    key: 'session_id',
+                                                    value: sessionId,
+                                                    operator: PropertyOperator.Exact,
+                                                    type: PropertyFilterType.LogEntry,
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                                severityLevels: [],
+                                serviceNames: [],
+                                limit: 1000,
+                            },
+                        })
+                        return response.results
+                    } catch (error) {
+                        console.error('Failed to load backend logs for session replay', error)
+                        return []
+                    }
                 },
             },
         ],
@@ -865,6 +923,7 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
                 s.sessionPlayerData,
                 s.miniFiltersByKey,
                 s.uuidToIndex,
+                s.logs,
             ],
             (
                 start,
@@ -878,7 +937,8 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
                 notebookCommentItems,
                 sessionPlayerData,
                 miniFiltersByKey,
-                uuidToIndex
+                uuidToIndex,
+                logs
             ): {
                 items: InspectorListItem[]
                 itemsByMiniFilterKey: Record<MiniFilterKey, InspectorListItem[]>
@@ -916,6 +976,9 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
                     'performance-other': [],
                     comment: [],
                     doctor: [],
+                    'logs-info': [],
+                    'logs-warn': [],
+                    'logs-error': [],
                 }
                 const itemsByType: Record<FilterableInspectorListItemTypes | 'context', InspectorListItem[]> = {
                     ['events']: [],
@@ -923,6 +986,7 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
                     ['network']: [],
                     ['doctor']: [],
                     ['comment']: [],
+                    ['logs']: [],
                     context: [],
                 }
                 let summaryItem: InspectorListItemSummary | undefined
@@ -938,7 +1002,7 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
                     }
 
                     // Categorize by type
-                    const itemType = ['events', 'console', 'network', 'doctor', 'comment'].includes(
+                    const itemType = ['events', 'console', 'network', 'doctor', 'comment', 'logs'].includes(
                         item.type as FilterableInspectorListItemTypes
                     )
                         ? (item.type as FilterableInspectorListItemTypes | 'context')
@@ -1040,6 +1104,26 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
 
                 for (const stateLogItem of processedSnapshotData?.appStateItems || []) {
                     addItem(stateLogItem)
+                }
+
+                // BACKEND LOGS
+                for (const log of logs || []) {
+                    const { timestamp, timeInRecording } = timeRelativeToStart(log, start)
+                    const highlightColor =
+                        log.level === 'error' || log.level === 'fatal'
+                            ? 'danger'
+                            : log.level === 'warn'
+                              ? 'warning'
+                              : undefined
+                    addItem({
+                        type: 'logs',
+                        timestamp,
+                        timeInRecording,
+                        search: `${log.body} ${log.event_name || ''} ${log.instrumentation_scope || ''}`,
+                        data: log,
+                        highlightColor,
+                        key: `backend-log-${log.uuid}`,
+                    })
                 }
 
                 // NOTE: Native JS sorting is relatively slow here - be careful changing this
@@ -1191,6 +1275,8 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
                 s.allPerformanceEvents,
                 s.sessionComments,
                 s.sessionCommentsLoading,
+                s.logs,
+                s.logsLoading,
             ],
             (
                 sessionEventsDataLoading: boolean,
@@ -1206,7 +1292,9 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
                 } | null,
                 performanceEvents: PerformanceEvent[] | null,
                 sessionComments: CommentType[] | null,
-                sessionCommentsLoading: boolean
+                sessionCommentsLoading: boolean,
+                logs: LogMessage[] | null,
+                logsLoading: boolean
             ): Record<FilterableInspectorListItemTypes, 'loading' | 'ready' | 'empty'> => {
                 const dataForEventsState = sessionEventsDataLoading ? 'loading' : events?.length ? 'ready' : 'empty'
                 const dataForConsoleState =
@@ -1234,6 +1322,7 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
                     : sessionComments?.length
                       ? 'ready'
                       : 'empty'
+                const dataForLogsState = logsLoading ? 'loading' : logs?.length ? 'ready' : 'empty'
 
                 return {
                     ['events']: dataForEventsState,
@@ -1241,6 +1330,7 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
                     ['network']: dataForNetworkState,
                     ['comment']: dataForCommentState,
                     ['doctor']: dataForDoctorState,
+                    ['logs']: dataForLogsState,
                 }
             },
         ],
@@ -1355,6 +1445,8 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
                     actions.registerWindowId(windowId)
                 }
             }
+            // Load backend logs when session events data is loaded (indicates session data is ready)
+            actions.loadLogs()
         },
     })),
     events(({ actions }) => ({
