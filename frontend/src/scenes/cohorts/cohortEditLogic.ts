@@ -46,8 +46,20 @@ export type CohortLogicProps = {
     tabId?: string
 }
 
+export type StaticCohortMode = 'criteria' | 'people'
+
 const checkIsPendingCalculation = (cohort: CohortType): boolean =>
     cohort.pending_version != null && (cohort.version == null || cohort.pending_version !== cohort.version)
+
+const hasFilterCriteria = (cohort: CohortType): boolean =>
+    Array.isArray(cohort.filters?.properties?.values) && cohort.filters.properties.values.length > 0
+
+const inferStaticCohortMode = (cohort: CohortType): StaticCohortMode =>
+    cohort.id === 'new' || cohort.id == null
+        ? 'people'
+        : cohort.is_static && hasFilterCriteria(cohort)
+          ? 'criteria'
+          : 'people'
 
 export const cohortEditLogic = kea<cohortEditLogicType>([
     props({} as CohortLogicProps),
@@ -99,6 +111,7 @@ export const cohortEditLogic = kea<cohortEditLogicType>([
         removePersonFromCohort: (personId: string) => ({ personId }),
         resetPersonsToCreateStaticCohort: true,
         refreshPersonsData: true,
+        setStaticCohortMode: (mode: StaticCohortMode) => ({ mode }),
     }),
 
     reducers(({ props }) => ({
@@ -257,6 +270,13 @@ export const cohortEditLogic = kea<cohortEditLogicType>([
                 resetPersonsToCreateStaticCohort: () => ({}),
             },
         ],
+        staticCohortMode: [
+            'criteria' as StaticCohortMode,
+            {
+                setCohort: (_, { cohort }) => inferStaticCohortMode(cohort),
+                setStaticCohortMode: (_, { mode }) => mode,
+            },
+        ],
     })),
 
     selectors({
@@ -283,7 +303,10 @@ export const cohortEditLogic = kea<cohortEditLogicType>([
                 csv: undefined,
                 filters: {
                     properties: {
-                        values: is_static ? undefined : filters.properties.values.map(validateGroup),
+                        values:
+                            is_static && values.staticCohortMode !== 'criteria'
+                                ? undefined
+                                : filters.properties.values.map(validateGroup),
                     },
                 },
             }),
@@ -297,7 +320,12 @@ export const cohortEditLogic = kea<cohortEditLogicType>([
                     actions.saveCohort(cohort)
                 } else {
                     const personIds = Object.keys(values.personsToCreateStaticCohort)
-                    if (cohort.is_static && cohort.csv == null && personIds.length === 0) {
+                    if (
+                        cohort.is_static &&
+                        values.staticCohortMode === 'people' &&
+                        cohort.csv == null &&
+                        personIds.length === 0
+                    ) {
                         lemonToast.error('You need to upload a csv file or add a person manually.')
                         return
                     }
@@ -347,7 +375,9 @@ export const cohortEditLogic = kea<cohortEditLogicType>([
                 saveCohort: async ({ cohortParams }, breakpoint) => {
                     const existingCohort = values.cohort
                     let cohort = { ...existingCohort, ...cohortParams }
-                    const cohortFormData = createCohortFormData(cohort)
+                    const cohortFormData = createCohortFormData(cohort, {
+                        preserveStaticFilters: cohort.is_static && values.staticCohortMode === 'criteria',
+                    })
 
                     try {
                         if (cohort.id !== 'new') {
