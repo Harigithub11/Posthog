@@ -17,7 +17,6 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 FIREWORKS_API_KEY = os.environ.get("FIREWORKS_API_KEY")
-
 TEST_POSTHOG_API_KEY = "phx_fake_personal_api_key"
 
 MOCK_MODEL_COSTS = {
