@@ -1,10 +1,12 @@
 import { cva } from 'cva'
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 
 import { Link, Spinner } from '@posthog/lemon-ui'
 
+/** Promise that resolves after the next animation frame. */
+const nextFrame = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()))
+
 import { Dayjs } from 'lib/dayjs'
-import { useAsyncCallback } from 'lib/hooks/useAsyncCallback'
 import { useScrollObserver } from 'lib/hooks/useScrollObserver'
 import { IconVerticalAlignCenter } from 'lib/lemon-ui/icons'
 import { ButtonPrimitive, ButtonPrimitiveProps } from 'lib/ui/Button/ButtonPrimitives'
@@ -12,7 +14,16 @@ import { cn } from 'lib/utils/css-classes'
 
 import { ItemCategory, ItemCollector, ItemRenderer, RendererProps, TimelineItem } from './timeline'
 
-const LOADING_DEBOUNCE_OPTIONS = { leading: true, delay: 500 }
+const ITEM_HEIGHT_PX = 32 // matches h-[2rem]
+const BUFFER_FACTOR = 1.5
+const MAX_FILL_ITERATIONS = 10
+
+function calculateBatchSize(containerEl: HTMLElement | null): number {
+    if (!containerEl) {
+        return 25
+    }
+    return Math.max(10, Math.ceil((containerEl.clientHeight / ITEM_HEIGHT_PX) * BUFFER_FACTOR))
+}
 
 export interface SessionTimelineHandle {
     scrollToItem: (itemId: string) => void
@@ -34,14 +45,25 @@ export function SessionTimeline({
     onTimeClick,
 }: SessionTimelineProps): JSX.Element {
     const [items, setItems] = useState<TimelineItem[]>([])
-    const [categories, setCategories] = useState<ItemCategory[]>(() => collector.getAllCategories())
+    const [activeCategories, setActiveCategories] = useState<ItemCategory[]>(() => collector.getAllCategories())
+    const [loading, setLoading] = useState(false)
+    const [scrollLoading, setScrollLoading] = useState<'before' | 'after' | null>(null)
+    const scrollLoadingRef = useRef<'before' | 'after' | null>(null)
+
+    const allCategories = useMemo(() => collector.getAllCategories(), [collector])
+
+    // Client-side category filter — instant, no network
+    const filteredItems = useMemo(
+        () => items.filter((item) => activeCategories.includes(item.category)),
+        [items, activeCategories]
+    )
 
     function toggleCategory(category: ItemCategory): void {
-        setCategories((prevCategories) => {
-            if (prevCategories.includes(category)) {
-                return prevCategories.filter((c) => c !== category)
+        setActiveCategories((prev) => {
+            if (prev.includes(category)) {
+                return prev.filter((c) => c !== category)
             }
-            return [...prevCategories, category]
+            return [...prev, category]
         })
     }
 
@@ -56,66 +78,114 @@ export function SessionTimeline({
         }
     }, [])
 
-    const [loadBefore, beforeLoading] = useAsyncCallback(
-        () =>
-            collector.loadBefore(categories, 25).then(() => {
-                const items = collector.collectItems()
-                const containerEl = containerRef.current
-                const scrollTop = containerEl?.scrollTop || 0
-                const scrollHeight = containerEl?.scrollHeight || 0
-                setItems(items)
-                // Restore scroll position
-                requestAnimationFrame(() => {
-                    const newScrollHeight = containerEl?.scrollHeight || 0
-                    if (containerEl) {
-                        containerEl.scrollTop = scrollTop + (newScrollHeight - scrollHeight)
-                    }
-                })
-            }),
-        [collector, categories],
-        LOADING_DEBOUNCE_OPTIONS
-    )
-
-    const [loadAfter, afterLoading] = useAsyncCallback(
-        () =>
-            collector.loadAfter(categories, 25).then(() => {
-                setItems(collector.collectItems())
-            }),
-        [collector, categories],
-        LOADING_DEBOUNCE_OPTIONS
-    )
-
+    // Initial load + auto-fill
     useEffect(() => {
         collector.clear()
-        Promise.all([loadBefore(), loadAfter()]).then(() => {
-            const items = collector.collectItems()
-            setItems(items)
-            selectedItemId && scrollToItem(selectedItemId)
-        })
-    }, [collector, loadBefore, loadAfter, setItems, scrollToItem, selectedItemId])
+        setLoading(true)
+
+        const batch = calculateBatchSize(containerRef.current)
+
+        Promise.all([collector.loadBefore(batch), collector.loadAfter(batch)])
+            .then(async () => {
+                setItems(collector.collectItems())
+
+                if (selectedItemId) {
+                    await nextFrame()
+                    scrollToItem(selectedItemId)
+                }
+
+                // Auto-fill: keep loading until container overflows or data exhausted
+                const el = containerRef.current
+                if (el) {
+                    await nextFrame()
+
+                    let fillIterations = 0
+                    while (el.scrollHeight <= el.clientHeight && fillIterations < MAX_FILL_ITERATIONS) {
+                        fillIterations++
+                        if (!collector.hasMoreBefore && !collector.hasMoreAfter) {
+                            break
+                        }
+
+                        const scrollTop = el.scrollTop
+                        const scrollHeight = el.scrollHeight
+                        const promises: Promise<void>[] = []
+                        if (collector.hasMoreBefore) {
+                            promises.push(collector.loadBefore(batch))
+                        }
+                        if (collector.hasMoreAfter) {
+                            promises.push(collector.loadAfter(batch))
+                        }
+                        await Promise.all(promises)
+                        setItems(collector.collectItems())
+                        await nextFrame()
+                        if (collector.hasMoreBefore) {
+                            el.scrollTop = scrollTop + (el.scrollHeight - scrollHeight)
+                        }
+                    }
+                }
+            })
+            .finally(() => setLoading(false))
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [collector, selectedItemId])
+
+    // Scroll-triggered loading
+    const handleScrollTop = useCallback(async () => {
+        if (!collector.hasMoreBefore || scrollLoadingRef.current) {
+            return
+        }
+        scrollLoadingRef.current = 'before'
+        setScrollLoading('before')
+        try {
+            const el = containerRef.current
+            const scrollTop = el?.scrollTop || 0
+            const scrollHeight = el?.scrollHeight || 0
+            const batch = calculateBatchSize(el)
+            await collector.loadBefore(batch)
+            setItems(collector.collectItems())
+            requestAnimationFrame(() => {
+                const newScrollHeight = el?.scrollHeight || 0
+                if (el) {
+                    el.scrollTop = scrollTop + (newScrollHeight - scrollHeight)
+                }
+            })
+        } finally {
+            scrollLoadingRef.current = null
+            setScrollLoading(null)
+        }
+    }, [collector])
+
+    const handleScrollBottom = useCallback(async () => {
+        if (!collector.hasMoreAfter || scrollLoadingRef.current) {
+            return
+        }
+        scrollLoadingRef.current = 'after'
+        setScrollLoading('after')
+        try {
+            const batch = calculateBatchSize(containerRef.current)
+            await collector.loadAfter(batch)
+            setItems(collector.collectItems())
+        } finally {
+            scrollLoadingRef.current = null
+            setScrollLoading(null)
+        }
+    }, [collector])
 
     const scrollRefCb = useScrollObserver({
-        onScrollTop: () => {
-            if (collector.hasBefore(categories)) {
-                return loadBefore()
-            }
-        },
-        onScrollBottom: () => {
-            if (collector.hasAfter(categories)) {
-                return loadAfter()
-            }
-        },
+        onScrollTop: handleScrollTop,
+        onScrollBottom: handleScrollBottom,
     })
 
     useImperativeHandle(ref, () => ({ scrollToItem }))
 
+    const isLoading = loading || scrollLoading !== null
+
     return (
         <div className={cn('flex h-full', className)}>
             <div className="flex flex-col justify-between items-center p-1 border-r border-gray-3 shrink-0">
-                <div className="flex flex-col items-center gap-2">
-                    {collector.getCategories().map((cat) => (
+                <CategoryToggleGroup>
+                    {allCategories.map((cat) => (
                         <ItemCategoryToggle
-                            active={categories.includes(cat)}
+                            active={activeCategories.includes(cat)}
                             key={cat}
                             category={cat}
                             onClick={() => toggleCategory(cat)}
@@ -123,12 +193,13 @@ export function SessionTimeline({
                             {collector.getRenderer(cat)?.categoryIcon}
                         </ItemCategoryToggle>
                     ))}
-                </div>
-                {items.find((item) => item.id === selectedItemId) && (
+                </CategoryToggleGroup>
+                {filteredItems.find((item) => item.id === selectedItemId) && (
                     <ButtonPrimitive
                         tooltip="Scroll to item"
                         tooltipPlacement="right"
                         iconOnly
+                        size="xs"
                         onClick={() => selectedItemId && scrollToItem(selectedItemId)}
                     >
                         <IconVerticalAlignCenter />
@@ -143,13 +214,13 @@ export function SessionTimeline({
                 className="h-full w-full overflow-y-auto relative"
                 style={{ scrollbarGutter: 'stable' }}
             >
-                {beforeLoading && (
+                {(loading || scrollLoading === 'before') && (
                     <div className={cn(itemContainer({ selected: false }), 'justify-start')}>
                         <Spinner />
                         <span className="text-secondary">loading...</span>
                     </div>
                 )}
-                {items.map((item) => {
+                {filteredItems.map((item) => {
                     const renderer = collector.getRenderer(item.category)
                     if (!renderer) {
                         return null
@@ -164,10 +235,15 @@ export function SessionTimeline({
                         />
                     )
                 })}
-                {afterLoading && !beforeLoading && (
+                {!loading && scrollLoading === 'after' && (
                     <div className={cn(itemContainer({ selected: false }), 'justify-start')}>
                         <Spinner />
                         <span className="text-secondary">loading...</span>
+                    </div>
+                )}
+                {!isLoading && filteredItems.length === 0 && (
+                    <div className={cn(itemContainer({ selected: false }), 'justify-center')}>
+                        <span className="text-secondary text-xs">No items</span>
                     </div>
                 )}
             </div>
@@ -215,11 +291,26 @@ const SessionTimelineItemContainer = forwardRef<HTMLDivElement, SessionTimelineI
     }
 )
 
+function CategoryToggleGroup({ children }: { children: React.ReactNode }): JSX.Element {
+    return (
+        <div
+            className={cn(
+                'flex flex-col gap-0.5',
+                '[&>button]:rounded [&>button]:border-0 [&>button]:px-2 [&>button]:py-1.5',
+                '[&>button:hover]:bg-fill-button-tertiary-hover'
+            )}
+        >
+            {children}
+        </div>
+    )
+}
+
 const itemCategoryToggle = cva({
-    base: 'shrink-0',
+    base: 'shrink-0 transition-colors',
     variants: {
         active: {
             true: 'text-accent',
+            false: 'text-muted opacity-50',
         },
     },
 })

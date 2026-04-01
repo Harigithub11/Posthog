@@ -2,16 +2,21 @@ import { BindLogic, useActions, useValues } from 'kea'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { P, match } from 'ts-pattern'
 
-import { Spinner } from '@posthog/lemon-ui'
+import { LemonBanner, Link, Spinner } from '@posthog/lemon-ui'
 
 import { EmptyMessage } from 'lib/components/EmptyMessage/EmptyMessage'
 import { errorPropertiesLogic } from 'lib/components/Errors/errorPropertiesLogic'
 import { SessionTimeline, SessionTimelineHandle } from 'lib/components/SessionTimeline/SessionTimeline'
 import { ItemCategory, ItemCollector } from 'lib/components/SessionTimeline/timeline'
-import { CustomItemLoader, customItemRenderer } from 'lib/components/SessionTimeline/timeline/items/custom'
-import { ExceptionItemLoader, exceptionRenderer } from 'lib/components/SessionTimeline/timeline/items/exceptions'
-import { ConsoleLogItemLoader, consoleLogRenderer } from 'lib/components/SessionTimeline/timeline/items/logs'
-import { PageItemLoader, pageRenderer } from 'lib/components/SessionTimeline/timeline/items/page'
+import { CombinedEventLoader } from 'lib/components/SessionTimeline/timeline/items/combined'
+import { customItemRenderer } from 'lib/components/SessionTimeline/timeline/items/custom'
+import { exceptionRenderer, StaticExceptionLoader } from 'lib/components/SessionTimeline/timeline/items/exceptions'
+import {
+    ExceptionStepLoader,
+    exceptionStepRenderer,
+} from 'lib/components/SessionTimeline/timeline/items/exceptionSteps'
+import { ConsoleLogLoader, consoleLogRenderer } from 'lib/components/SessionTimeline/timeline/items/logs'
+import { pageRenderer } from 'lib/components/SessionTimeline/timeline/items/page'
 import { Dayjs, dayjs } from 'lib/dayjs'
 import {
     TabsPrimitive,
@@ -44,7 +49,7 @@ export function SessionTab({ timestamp, className, ...props }: SessionTabProps):
                         <Spinner />
                     </div>
                 ))
-                .with([false, P.nullish], () => <NoSessionIdFound />)
+                .with([false, P.nullish], () => <NoSessionStepsView timestamp={timestamp} />)
                 .with([false, P.string], ([_, sessionId]) => (
                     <BindLogic logic={sessionTabLogic} props={{ timestamp, sessionId }}>
                         <TabsPrimitive
@@ -73,7 +78,7 @@ export function SessionTab({ timestamp, className, ...props }: SessionTabProps):
 }
 
 export function SessionTimelineTab(): JSX.Element {
-    const { uuid } = useValues(errorPropertiesLogic)
+    const { properties, uuid } = useValues(errorPropertiesLogic)
     const sessionTimelineRef = useRef<SessionTimelineHandle>(null)
     const { currentSessionTab } = useValues(exceptionCardLogic)
     const { sessionId, timestamp } = useValues(sessionTabLogic)
@@ -100,24 +105,31 @@ export function SessionTimelineTab(): JSX.Element {
         }
         const timestampDayJs = dayjs(timestamp).add(1, 'millisecond')
         const collector = new ItemCollector(sessionId, timestampDayJs)
-        collector.addCategory(
-            ItemCategory.ERROR_TRACKING,
-            exceptionRenderer,
-            new ExceptionItemLoader(sessionId, timestampDayJs)
-        )
-        collector.addCategory(ItemCategory.PAGE_VIEWS, pageRenderer, new PageItemLoader(sessionId, timestampDayJs))
-        collector.addCategory(
-            ItemCategory.CUSTOM_EVENTS,
-            customItemRenderer,
-            new CustomItemLoader(sessionId, timestampDayJs)
-        )
+
+        // Exception steps (in-memory, no API calls)
+        if (Array.isArray(properties?.$exception_steps)) {
+            collector.addCategory(
+                ItemCategory.EXCEPTION_STEPS,
+                exceptionStepRenderer,
+                new ExceptionStepLoader(uuid, dayjs.utc(timestamp), properties)
+            )
+        }
+
+        // All event-based categories in a single query
+        const eventLoader = new CombinedEventLoader(sessionId, timestampDayJs)
+        collector.addCategory(ItemCategory.ERROR_TRACKING, exceptionRenderer, eventLoader)
+        collector.addCategory(ItemCategory.PAGE_VIEWS, pageRenderer, eventLoader)
+        collector.addCategory(ItemCategory.CUSTOM_EVENTS, customItemRenderer, eventLoader)
+
+        // Console logs (separate table)
         collector.addCategory(
             ItemCategory.CONSOLE_LOGS,
             consoleLogRenderer,
-            new ConsoleLogItemLoader(sessionId, timestampDayJs)
+            new ConsoleLogLoader(sessionId, timestampDayJs)
         )
+
         return collector
-    }, [sessionId, timestamp])
+    }, [properties, sessionId, timestamp, uuid])
 
     return (
         <TabsPrimitiveContent value="timeline" className="flex-1 min-h-0 overflow-y-auto">
@@ -130,6 +142,53 @@ export function SessionTimelineTab(): JSX.Element {
                 />
             )}
         </TabsPrimitiveContent>
+    )
+}
+
+function NoSessionStepsView({ timestamp }: { timestamp?: string }): JSX.Element {
+    const { properties, uuid } = useValues(errorPropertiesLogic)
+    const hasSteps = Array.isArray(properties?.$exception_steps) && properties.$exception_steps.length > 0
+
+    const collector = useMemo<ItemCollector | undefined>(() => {
+        if (!hasSteps || !timestamp) {
+            return undefined
+        }
+        const ts = dayjs(timestamp).add(1, 'millisecond')
+        const collector = new ItemCollector(uuid, ts)
+
+        // Current exception as a static item
+        collector.addCategory(
+            ItemCategory.ERROR_TRACKING,
+            exceptionRenderer,
+            new StaticExceptionLoader(uuid, dayjs.utc(timestamp), properties)
+        )
+
+        // Exception steps (in-memory)
+        collector.addCategory(
+            ItemCategory.EXCEPTION_STEPS,
+            exceptionStepRenderer,
+            new ExceptionStepLoader(uuid, dayjs.utc(timestamp), properties)
+        )
+
+        return collector
+    }, [hasSteps, timestamp, uuid, properties])
+
+    if (!collector) {
+        return <NoSessionIdFound />
+    }
+
+    return (
+        <div className="flex flex-col flex-1 min-h-0">
+            <LemonBanner type="info" className="m-2 shrink-0">
+                No session ID associated with this exception — showing exception steps only.{' '}
+                <Link to="https://posthog.com/docs/data/sessions#server-sdks-and-sessions" target="_blank">
+                    Learn how to add session tracking →
+                </Link>
+            </LemonBanner>
+            <div className="flex-1 min-h-0 overflow-y-auto">
+                <SessionTimeline collector={collector} selectedItemId={uuid} />
+            </div>
+        </div>
     )
 }
 

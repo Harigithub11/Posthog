@@ -3,13 +3,13 @@ import { Link } from '@posthog/lemon-ui'
 
 import { ErrorTrackingException, ErrorTrackingRuntime } from 'lib/components/Errors/types'
 import { getRuntimeFromLib } from 'lib/components/Errors/utils'
-import { dayjs } from 'lib/dayjs'
+import { Dayjs, dayjs } from 'lib/dayjs'
 import { urls } from 'scenes/urls'
 
 import { RuntimeIcon } from 'products/error_tracking/frontend/components/RuntimeIcon'
 
-import { ItemCategory, ItemRenderer, TimelineItem } from '..'
-import { BasePreview, EventLoader } from './base'
+import { ItemCategory, ItemLoader, ItemRenderer, TimelineItem } from '..'
+import { BasePreview } from './base'
 
 export interface ExceptionItem extends TimelineItem {
     payload: {
@@ -18,6 +18,40 @@ export interface ExceptionItem extends TimelineItem {
         message: string
         issue_id: string
         fingerprint: string
+    }
+}
+
+/**
+ * Static loader that holds a single pre-built exception item in memory.
+ * Used when there is no session ID but we still want to show the current
+ * exception on the timeline alongside exception steps.
+ */
+export class StaticExceptionLoader implements ItemLoader<ExceptionItem> {
+    private readonly item: ExceptionItem
+
+    constructor(uuid: string, timestamp: Dayjs, properties?: Record<string, any>) {
+        const runtime: ErrorTrackingRuntime = getRuntimeFromLib(properties?.$lib)
+        const exceptionList: ErrorTrackingException[] | undefined = properties?.$exception_list
+        this.item = {
+            id: uuid,
+            category: ItemCategory.ERROR_TRACKING,
+            timestamp: dayjs.utc(timestamp),
+            payload: {
+                runtime,
+                type: exceptionList?.[0]?.type ?? 'Exception',
+                message: exceptionList?.[0]?.value ?? '',
+                fingerprint: properties?.$exception_fingerprint ?? '',
+                issue_id: properties?.$exception_issue_id ?? '',
+            },
+        }
+    }
+
+    async loadBefore(cursor: Dayjs): Promise<ExceptionItem[]> {
+        return this.item.timestamp.isBefore(cursor) ? [this.item] : []
+    }
+
+    async loadAfter(cursor: Dayjs): Promise<ExceptionItem[]> {
+        return this.item.timestamp.isAfter(cursor) ? [this.item] : []
     }
 }
 
@@ -47,52 +81,4 @@ export const exceptionRenderer: ItemRenderer<ExceptionItem> = {
             />
         )
     },
-}
-
-export class ExceptionItemLoader extends EventLoader<ExceptionItem> {
-    select(): string[] {
-        return ['uuid', 'timestamp', 'properties']
-    }
-
-    where(): string[] {
-        return ["equals(event, '$exception')"]
-    }
-
-    buildItem(evt: any): ExceptionItem {
-        const properties = JSON.parse(evt[2])
-        return {
-            id: evt[0],
-            category: ItemCategory.ERROR_TRACKING,
-            timestamp: dayjs.utc(evt[1]),
-            payload: {
-                runtime: getRuntimeFromLib(properties['$lib']),
-                type: getExceptionType(properties['$exception_list']),
-                message: getExceptionMessage(properties['$exception_list']),
-                fingerprint: properties['$exception_fingerprint'],
-                issue_id: properties['$exception_issue_id'],
-            },
-        } as ExceptionItem
-    }
-}
-
-function getExceptionType(exceptionList: ErrorTrackingException[]): string | undefined {
-    try {
-        const firstException = exceptionList[0]
-        if (firstException) {
-            return firstException.type
-        }
-    } catch {
-        return undefined
-    }
-}
-
-function getExceptionMessage(exceptionList: ErrorTrackingException[]): string | undefined {
-    try {
-        const firstException = exceptionList[0]
-        if (firstException) {
-            return firstException.value
-        }
-    } catch {
-        return undefined
-    }
 }
