@@ -27,6 +27,7 @@ type keyMap struct {
 	Sort       key.Binding
 	LazyDocker key.Binding
 	ProcViewer key.Binding
+	Setup      key.Binding
 }
 
 func defaultKeyMap() keyMap {
@@ -127,20 +128,24 @@ func defaultKeyMap() keyMap {
 			key.WithHelp("p:", "htop"),
 			key.WithDisabled(),
 		),
+		Setup: key.NewBinding(
+			key.WithKeys("t"),
+			key.WithHelp("t:", "setup"),
+		),
 	}
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.KeyDown, k.NextPane, k.Search, k.CopyMode, k.Info, k.Sort, k.Restart, k.Stop, k.Quit, k.Help}
+	return []key.Binding{k.KeyDown, k.NextPane, k.Search, k.CopyMode, k.Info, k.Sort, k.Setup, k.Restart, k.Stop, k.Quit, k.Help}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.KeyDown, k.KeyUp, k.Sort},
-		{k.ScrollUp, k.ScrollDown},
-		{k.GotoTop, k.GotoBottom},
-		{k.NextPane, k.PrevPane, k.LazyDocker, k.ProcViewer},
-		{k.Restart, k.Stop, k.Info},
+		{k.ScrollUp, k.ScrollDown, k.Setup},
+		{k.GotoTop, k.GotoBottom, k.Info},
+		{k.NextPane, k.PrevPane, k.LazyDocker},
+		{k.Restart, k.Stop, k.ProcViewer},
 		{k.Search, k.SearchNext, k.SearchPrev},
 		{k.CopyMode, k.Quit, k.Help},
 	}

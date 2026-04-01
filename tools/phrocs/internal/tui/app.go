@@ -86,6 +86,17 @@ type Model struct {
 	// Buffered text for PTY input when the output pane is focused
 	inputBuffer string
 
+	// Setup mode: full-screen intent selection for dev environment config
+	setupMode    bool
+	setupStep    int // 1 = intent selection, 2 = unit exclusion
+	setupEntries []config.Intent
+	setupCursor  int
+	setupOffset  int
+	setupChecked map[string]bool
+	setupIntents []string // intents selected in step 1
+	setupError   string   // error message from applying changes
+	configPath   string // path to the running config file
+
 	// Info mode: replaces the output viewport with process stats
 	infoMode bool
 
@@ -116,7 +127,7 @@ type Model struct {
 }
 
 // Pass a non-nil logger to enable debug logging (key inputs, selection changes, etc.)
-func New(mgr *process.Manager, cfg *config.Config, logger *log.Logger) Model {
+func New(mgr *process.Manager, cfg *config.Config, configPath string, logger *log.Logger) Model {
 	keys := defaultKeyMap()
 
 	h := help.New()
@@ -133,6 +144,7 @@ func New(mgr *process.Manager, cfg *config.Config, logger *log.Logger) Model {
 		mouseScrollSpeed: cfg.MouseScrollSpeed,
 		hideHelp:         cfg.HideKeymapWindow,
 		procListWidth:    cfg.ProcListWidth,
+		configPath:       configPath,
 		keys:             keys,
 		help:             h,
 		spinner:          spinner.New(spinner.WithSpinner(spinner.MiniDot)),
@@ -184,6 +196,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case process.OutputMsg:
 		// Rebuild viewport content only for the active process to keep rendering cheap
 		if p := m.activeProc(); m.ready && p != nil && p.Name == msg.Name {
+			// Clear the active process's unread flag
+			p.MarkRead()
 			// In docker mode the viewport shows the status table or container logs,
 			// not the process's combined output
 			if m.isDockerMode() || m.infoMode {
@@ -268,6 +282,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m, cmds, handled = m.handleCopyKey(msg, cmds)
 		} else if m.infoMode {
 			m, cmds, handled = m.handleInfoKey(msg, cmds)
+		} else if m.setupMode {
+			m, cmds, handled = m.handleSetupKey(msg, cmds)
 		} else if m.hedgehogMode {
 			m, cmds, handled = m.handleHedgehogKey(msg, cmds)
 		}
@@ -297,7 +313,9 @@ func (m Model) View() tea.View {
 		return v
 	}
 	var middle string
-	if m.isFullScreen() {
+	if m.setupMode {
+		middle = m.renderSetupView()
+	} else if m.isFullScreen() {
 		middle = m.renderOutput()
 	} else if m.isDockerMode() {
 		middle = lipgloss.JoinHorizontal(lipgloss.Top, m.renderSidebar(), m.renderOutput(), m.renderContainerSidebar())
@@ -324,7 +342,7 @@ func (m Model) View() tea.View {
 // Returns true when sidebars should be hidden and the output pane
 // fills the full width (copy mode or any search state).
 func (m Model) isFullScreen() bool {
-	return m.copyMode || m.searchMode
+	return m.copyMode || m.searchMode || m.setupMode
 }
 
 func (m Model) activeProc() *process.Process {
@@ -412,6 +430,11 @@ func (m Model) loadActiveProc() (Model, []tea.Cmd) {
 	m.searchMode = false
 	m.inputBuffer = ""
 	m.viewport.StyleLineFunc = nil
+
+	// Mark the newly active process as read
+	if p := m.activeProc(); p != nil {
+		p.MarkRead()
+	}
 
 	// Resize viewport to account for container sidebar appearing/disappearing
 	m = m.applySize()
