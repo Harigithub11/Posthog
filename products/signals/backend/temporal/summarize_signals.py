@@ -33,11 +33,10 @@ Given a list of signals, produce a JSON object with two fields:
 
 1. "title": A short, declarative headline (max 75 chars). Lead with the most newsworthy takeaway, not a label.
 
-2. "summary": An Axios-style brief using these sections, each on its own line:
-    - One-sentence tl;dr description.
-    - **What's happening:** 1-2 sentences on the concrete facts. Reference specific signals, error types, metrics, or patterns.
-    - **Why it matters:** One sentence on the business or user impact. This is the most important part — lead with it.
-    - **The bottom line:** One sentence with the specific, actionable next step — a code change, investigation, or decision.
+2. "summary": An Axios-style brief using these sections, each on its own paragraph:
+   - **Why it matters:** One sentence on the business or user impact. This is the most important part — lead with it.
+   - **What's happening:** 1-2 sentences on the concrete facts. Reference specific signals, error types, metrics, or patterns.
+   - **The bottom line:** One sentence with the specific, actionable next step — a code change, investigation, or decision.
 
 Style rules:
 - Be direct and specific. Every sentence must carry information.
