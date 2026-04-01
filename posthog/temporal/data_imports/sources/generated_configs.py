@@ -396,7 +396,7 @@ class InstagramSourceConfig(config.Config):
 
 @config.config
 class IntercomSourceConfig(config.Config):
-    pass
+    api_key: str
 
 
 @config.config
