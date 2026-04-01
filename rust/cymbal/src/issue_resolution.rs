@@ -6,7 +6,7 @@ use common_kafka::kafka_producer::{send_iter_to_kafka, KafkaProduceError};
 
 use rdkafka::types::RDKafkaErrorCode;
 use serde::{Deserialize, Serialize};
-use sqlx::PgConnection;
+use sqlx::{FromRow, PgConnection};
 use uuid::Uuid;
 
 use crate::assignment_rules::{try_assignment_rules, Assignee, Assignment};
@@ -24,6 +24,11 @@ pub struct IssueFingerprintOverride {
     pub issue_id: Uuid,
     pub fingerprint: String,
     pub version: i64,
+}
+
+#[derive(FromRow)]
+struct FingerprintFirstSeenRow {
+    first_seen: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone)]
@@ -84,6 +89,28 @@ impl Issue {
         .await?;
 
         Ok(res)
+    }
+
+    pub async fn load_fingerprint_first_seen<'c, E>(
+        executor: E,
+        team_id: i32,
+        fingerprint: &str,
+    ) -> Result<Option<DateTime<Utc>>, UnhandledError>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+    {
+        let row = sqlx::query_as::<_, FingerprintFirstSeenRow>(
+            r#"
+            SELECT first_seen FROM posthog_errortrackingissuefingerprintv2
+            WHERE team_id = $1 AND fingerprint = $2
+            "#,
+        )
+        .bind(team_id)
+        .bind(fingerprint)
+        .fetch_optional(executor)
+        .await?;
+
+        Ok(row.and_then(|r| r.first_seen))
     }
 
     pub async fn load<'c, E>(
@@ -170,6 +197,9 @@ impl Issue {
 
         let reopened = !res.is_empty();
         if reopened {
+            // DB row is now active; keep in-memory state in sync so downstream Kafka payloads
+            // (fingerprint_issue_state, internal events) are not stale.
+            self.status = IssueStatus::Active;
             metrics::counter!(ISSUE_REOPENED).increment(1);
             capture_issue_reopened(self.team_id, self.id);
         }
@@ -197,6 +227,80 @@ impl Issue {
 
         Ok(assignments)
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct IssueFingerprintIssueState {
+    pub team_id: i32,
+    pub fingerprint: String,
+    pub issue_id: Uuid,
+    pub issue_name: Option<String>,
+    pub issue_description: Option<String>,
+    pub issue_status: String,
+    pub assigned_user_id: Option<i64>,
+    pub assigned_role_id: Option<String>,
+    pub first_seen: String,
+    pub is_deleted: i8,
+    pub version: i64,
+}
+
+fn assignment_user_role_from_assignment(
+    assignment: Option<&Assignment>,
+) -> (Option<i64>, Option<String>) {
+    let Some(a) = assignment else {
+        return (None, None);
+    };
+    if let Some(uid) = a.user_id {
+        return (Some(i64::from(uid)), None);
+    }
+    if let Some(rid) = a.role_id {
+        return (None, Some(rid.to_string()));
+    }
+    (None, None)
+}
+
+impl IssueFingerprintIssueState {
+    pub fn new(
+        issue: &Issue,
+        fingerprint: &str,
+        assignment: Option<&Assignment>,
+        first_seen: DateTime<Utc>,
+    ) -> Self {
+        let now = Utc::now().timestamp_millis();
+        let (assigned_user_id, assigned_role_id) = assignment_user_role_from_assignment(assignment);
+        Self {
+            team_id: issue.team_id,
+            fingerprint: fingerprint.to_string(),
+            issue_id: issue.id,
+            issue_name: issue.name.clone(),
+            issue_description: issue.description.clone(),
+            issue_status: issue.status.to_string(),
+            assigned_user_id,
+            assigned_role_id,
+            first_seen: first_seen.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+            is_deleted: 0,
+            version: now,
+        }
+    }
+}
+
+pub async fn send_issue_fingerprint_issue_state(
+    context: &AppContext,
+    issue: &Issue,
+    fingerprint: &str,
+    assignment: Option<&Assignment>,
+    first_seen: DateTime<Utc>,
+) -> Result<(), UnhandledError> {
+    let msg = IssueFingerprintIssueState::new(issue, fingerprint, assignment, first_seen);
+    send_iter_to_kafka(
+        &context.immediate_producer,
+        &context.config.issue_fingerprint_issue_state_topic,
+        &[msg],
+    )
+    .await
+    .into_iter()
+    .collect::<Result<Vec<_>, _>>()?;
+    Ok(())
 }
 
 impl IssueFingerprintOverride {

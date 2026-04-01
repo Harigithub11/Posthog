@@ -10,8 +10,8 @@ use crate::{
     assignment_rules::{try_assignment_rules, Assignment},
     error::UnhandledError,
     issue_resolution::{
-        send_issue_created_alert, send_issue_reopened_alert, send_new_fingerprint_event, Issue,
-        IssueFingerprintOverride,
+        send_issue_created_alert, send_issue_fingerprint_issue_state, send_issue_reopened_alert,
+        send_new_fingerprint_event, Issue, IssueFingerprintOverride,
     },
     metric_consts::{ISSUE_CREATED, ISSUE_LINKER_OPERATOR},
     posthog_utils::capture_issue_created,
@@ -107,9 +107,21 @@ async fn resolve_issue(
     let existing_issue = Issue::load_by_fingerprint(&mut *conn, team_id, &fingerprint).await?;
     if let Some(mut issue) = existing_issue {
         if issue.maybe_reopen(&mut *conn).await? {
+            let first_seen_for_state =
+                Issue::load_fingerprint_first_seen(&mut *conn, team_id, &fingerprint)
+                    .await?
+                    .unwrap_or(issue.created_at);
             let assignment =
                 process_assignment(&mut conn, &context.team_manager, &issue, &event_properties)
                     .await?;
+            send_issue_fingerprint_issue_state(
+                context,
+                &issue,
+                &fingerprint,
+                assignment.as_ref(),
+                first_seen_for_state,
+            )
+            .await?;
             let output_props: OutputErrProps = event_properties.to_output(issue.id)?;
             context
                 .signal_client
@@ -159,9 +171,21 @@ async fn resolve_issue(
 
         // Since we just loaded an issue, check if it needs to be reopened
         if issue.maybe_reopen(&mut *conn).await? {
+            let first_seen_for_state =
+                Issue::load_fingerprint_first_seen(&mut *conn, team_id, &fingerprint)
+                    .await?
+                    .unwrap_or(issue.created_at);
             let assignment =
                 process_assignment(&mut conn, &context.team_manager, &issue, &event_properties)
                     .await?;
+            send_issue_fingerprint_issue_state(
+                context,
+                &issue,
+                &fingerprint,
+                assignment.as_ref(),
+                first_seen_for_state,
+            )
+            .await?;
             let output_props: OutputErrProps = event_properties.to_output(issue.id)?;
             context
                 .signal_client
@@ -169,6 +193,7 @@ async fn resolve_issue(
             send_issue_reopened_alert(context, &issue, assignment, output_props, &event_timestamp)
                 .await?;
         }
+        return Ok(issue);
     } else {
         metrics::counter!(ISSUE_CREATED).increment(1);
         let assignment =
@@ -176,6 +201,14 @@ async fn resolve_issue(
 
         let output_props = event_properties.clone().to_output(issue.id)?;
         send_new_fingerprint_event(context, &issue, &output_props).await?;
+        send_issue_fingerprint_issue_state(
+            context,
+            &issue,
+            &fingerprint,
+            assignment.as_ref(),
+            event_timestamp,
+        )
+        .await?;
         context
             .signal_client
             .emit_issue_created(&issue, &output_props);

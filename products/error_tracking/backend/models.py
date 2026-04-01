@@ -1,5 +1,7 @@
+import time
 from decimal import Decimal
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
@@ -11,14 +13,24 @@ from django_deprecate_fields import deprecate_field
 from rest_framework.exceptions import ValidationError
 
 from posthog.kafka_client.client import ClickhouseProducer
-from posthog.kafka_client.topics import KAFKA_ERROR_TRACKING_ISSUE_FINGERPRINT
+from posthog.kafka_client.topics import (
+    KAFKA_ERROR_TRACKING_FINGERPRINT_ISSUE_STATE,
+    KAFKA_ERROR_TRACKING_ISSUE_FINGERPRINT,
+)
 from posthog.models.integration import Integration
 from posthog.models.utils import UUIDModel, UUIDTModel
 from posthog.storage import object_storage
 
-from products.error_tracking.backend.sql import INSERT_ERROR_TRACKING_ISSUE_FINGERPRINT_OVERRIDES
+from products.error_tracking.backend.sql import (
+    INSERT_ERROR_TRACKING_FINGERPRINT_ISSUE_STATE,
+    INSERT_ERROR_TRACKING_ISSUE_FINGERPRINT_OVERRIDES,
+)
 
 logger = structlog.get_logger(__name__)
+
+
+def _format_datetime64_utc_for_kafka(dt) -> str:
+    return dt.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
 
 class ErrorTrackingIssueManager(models.Manager):
@@ -497,6 +509,57 @@ def override_error_tracking_issue_fingerprint(
         },
         sync=sync,
     )
+
+
+def sync_issue_to_clickhouse(*, issue_id, team_id: int) -> None:
+    issue = ErrorTrackingIssue.objects.filter(id=issue_id, team_id=team_id).select_related("assignment").first()
+    if issue is None:
+        return
+
+    fingerprints = list(ErrorTrackingIssueFingerprintV2.objects.filter(issue=issue, team_id=team_id))
+    if not fingerprints:
+        return
+
+    assignment = getattr(issue, "assignment", None)
+    assigned_user_id: int | None = None
+    assigned_role_id: str | None = None
+    if assignment is not None:
+        if assignment.user_id:
+            assigned_user_id = assignment.user_id
+        elif assignment.role_id:
+            assigned_role_id = str(assignment.role_id)
+
+    producer = ClickhouseProducer()
+    version = int(
+        time.time() * 1000
+    )  # ReplacingMergeTree version — match rust/cymbal IssueFingerprintIssueState::new (Utc::now().timestamp_millis())
+
+    for fp in fingerprints:
+        first_seen_raw = fp.first_seen or issue.created_at
+        first_seen = _format_datetime64_utc_for_kafka(first_seen_raw) if first_seen_raw else None
+        producer.produce(
+            sql=INSERT_ERROR_TRACKING_FINGERPRINT_ISSUE_STATE,
+            topic=KAFKA_ERROR_TRACKING_FINGERPRINT_ISSUE_STATE,
+            data={
+                "fingerprint": fp.fingerprint,
+                "issue_id": str(issue.id),
+                "team_id": team_id,
+                "issue_name": issue.name,
+                "issue_description": issue.description,
+                "issue_status": issue.status,
+                "assigned_user_id": assigned_user_id,
+                "assigned_role_id": assigned_role_id,
+                "first_seen": first_seen,
+                "is_deleted": 0,
+                "version": version,
+            },
+            sync=True,
+        )
+
+
+def sync_issues_to_clickhouse(*, issue_ids: list, team_id: int) -> None:
+    for iid in issue_ids:
+        sync_issue_to_clickhouse(issue_id=iid, team_id=team_id)
 
 
 def delete_symbol_set_contents(upload_path: str) -> None:
