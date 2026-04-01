@@ -5067,6 +5067,7 @@ export type ExportContext = (
 ) & {
     row_limit?: number // Some exports have different row limits, e.g. logs
     columns?: string[]
+    variables_override?: Record<string, any>
 }
 
 export interface ExportedAssetType {
