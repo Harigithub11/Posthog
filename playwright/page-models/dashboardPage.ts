@@ -203,22 +203,16 @@ export class DashboardPage {
     }
 
     async findCardByTitle(title: string): Promise<Locator> {
-        const count = await this.insightCards.count()
-
-        for (let i = 0; i < count; i++) {
-            const card = this.insightCards.nth(i)
-            await card.scrollIntoViewIfNeeded()
-            const titleText = await card
-                .locator('[data-attr="insight-card-title"]')
-                .textContent({ timeout: 5000 })
-                .catch(() => null)
-
-            if (titleText?.includes(title)) {
-                return card
-            }
-        }
-
-        throw new Error(`Could not find InsightCard with title "${title}"`)
+        const card = this.insightCards
+            .filter({
+                has: this.page.locator('[data-attr="insight-card-title"]', { hasText: title }),
+            })
+            .first()
+        await expect(card).toBeVisible({ timeout: 30000 })
+        // Scroll into view so the intersection observer marks the card as visible,
+        // which triggers content rendering (required when EXPERIMENTAL_DASHBOARD_ITEM_RENDERING is on).
+        await card.scrollIntoViewIfNeeded()
+        return card
     }
 
     async openFirstTileMenu(): Promise<void> {
