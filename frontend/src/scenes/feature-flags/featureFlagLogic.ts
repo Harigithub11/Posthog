@@ -15,7 +15,7 @@ import {
 } from 'kea'
 import { DeepPartialMap, ValidationErrorType, forms } from 'kea-forms'
 import { loaders } from 'kea-loaders'
-import { router, urlToAction } from 'kea-router'
+import { beforeUnload, router, urlToAction } from 'kea-router'
 import { createElement } from 'react'
 
 import api, { PaginatedResponse } from 'lib/api'
@@ -2559,4 +2559,9 @@ export const featureFlagLogic = kea<featureFlagLogicType>([
             actions.loadFeatureFlag()
         }
     }),
+
+    beforeUnload(({ values }) => ({
+        enabled: () => values.featureFlagChanged,
+        message: 'Leave?\nChanges you made will be discarded.',
+    })),
 ])
