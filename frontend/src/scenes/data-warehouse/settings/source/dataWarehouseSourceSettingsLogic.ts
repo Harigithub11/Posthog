@@ -6,6 +6,7 @@ import posthog from 'posthog-js'
 import { lemonToast } from '@posthog/lemon-ui'
 
 import api from 'lib/api'
+import { compareDatetimes } from 'lib/dayjs'
 import { FEATURE_FLAGS } from 'lib/constants'
 import { featureFlagLogic } from 'lib/logic/featureFlagLogic'
 import { availableSourcesDataLogic } from 'scenes/data-warehouse/new/availableSourcesDataLogic'
@@ -150,7 +151,7 @@ export const dataWarehouseSourceSettingsLogic = kea<dataWarehouseSourceSettingsL
 
                     // Sort by created_at descending (newest first)
                     return Array.from(jobsById.values()).sort(
-                        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                        (a, b) => -compareDatetimes(a.created_at, b.created_at)
                     )
                 },
                 loadMoreJobs: async () => {
