@@ -150,7 +150,7 @@ def _setup_from_intents(intent_map: IntentMap) -> DevenvConfig:
     select_all = "all"
     click.echo("")
     click.echo(click.style("Products", fg="cyan"))
-    click.echo(f"Select products (comma-separated numbers, or '{select_all}').")
+    click.echo(f"Select products (comma-separated numbers, '{select_all}', or 'none').")
     click.echo("")
 
     intents = list(intent_map.intents.items())
@@ -159,10 +159,13 @@ def _setup_from_intents(intent_map: IntentMap) -> DevenvConfig:
 
     click.echo("")
 
-    selection = click.prompt(f"Enter numbers (e.g., 1,3,5) or '{select_all}'", default="1")
+    selection = click.prompt(f"Enter numbers (e.g., 1,3,5), '{select_all}', or 'none'", default="1")
 
     selected_intents = []
-    if selection.strip().lower() == select_all:
+    selection_lower = selection.strip().lower()
+    if selection_lower == "none":
+        selected_intents = []
+    elif selection_lower == select_all:
         selected_intents = [name for name, _ in intents]
     else:
         try:
@@ -175,7 +178,12 @@ def _setup_from_intents(intent_map: IntentMap) -> DevenvConfig:
             selected_intents = ["product_analytics"]
 
     if not selected_intents:
-        selected_intents = ["product_analytics"]
+        click.echo("")
+        click.echo(
+            click.style("Minimal mode:", fg="yellow")
+            + " backend + frontend + core docker (db, redis, clickhouse, kafka)."
+        )
+        click.echo("No celery, nodejs, capture, or other service processes.")
 
     return DevenvConfig(intents=selected_intents)
 
