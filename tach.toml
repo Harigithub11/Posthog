@@ -453,6 +453,15 @@ interfaces = [
 ]
 
 [[modules]]
+path = "products.ci_monitoring"
+depends_on = ["posthog"]
+layer = "products"
+interfaces = [
+    "products.ci_monitoring.backend.facade",
+    "products.ci_monitoring.backend.presentation.views",
+]
+
+[[modules]]
 path = "products.messaging"
 depends_on = ["posthog"]
 layer = "non_isolated"
