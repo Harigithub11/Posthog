@@ -153,12 +153,14 @@ export function HTMLEditor({
     onTabChange,
     activeTab,
     textPlaceholder,
+    className,
 }: {
     value?: string
     onChange: (value: any) => void
     onTabChange: (key: SurveyQuestionDescriptionContentType) => void
     activeTab: SurveyQuestionDescriptionContentType
     textPlaceholder?: string
+    className?: string
 }): JSX.Element {
     return (
         <>
@@ -175,6 +177,7 @@ export function HTMLEditor({
                                 value={value}
                                 onChange={(v) => onChange(v)}
                                 placeholder={textPlaceholder}
+                                className={className}
                             />
                         ),
                     },
