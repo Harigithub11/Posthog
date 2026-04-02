@@ -175,7 +175,10 @@ class PersonsDeleteSustainedThrottle(PersonalApiKeyRateThrottle):
 
 class PersonUpdatePropertyRequestSerializer(serializers.Serializer):
     key = serializers.CharField(help_text="The property key to set.")
-    value = serializers.JSONField(help_text="The property value. Can be a string, number, boolean, or object.")
+    value = serializers.JSONField(
+        allow_null=True,
+        help_text="The property value. Can be a string, number, boolean, object, array, or null.",
+    )
 
 
 class PersonDeletePropertyRequestSerializer(serializers.Serializer):
@@ -705,7 +708,7 @@ class PersonViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
     @extend_schema(request=PersonUpdatePropertyRequestSerializer, parameters=[_PERSON_ID_PARAMETER])
     @action(methods=["POST"], detail=True, required_scopes=["person:write"])
     def update_property(self, request: request.Request, pk=None, **kwargs) -> response.Response:
-        if request.data.get("value") is None:
+        if "value" not in request.data:
             return Response(
                 {
                     "attr": "value",
