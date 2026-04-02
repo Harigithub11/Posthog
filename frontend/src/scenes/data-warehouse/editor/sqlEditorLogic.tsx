@@ -253,6 +253,9 @@ export const sqlEditorLogic = kea<sqlEditorLogicType>([
         ],
     })),
     actions(() => ({
+        setSelectedQueryTablesAndColumns: (tablesAndColumns: Record<string, Record<string, boolean>>) => ({
+            tablesAndColumns,
+        }),
         setQueryInput: (queryInput: string | null) => ({ queryInput }),
         runQuery: (queryOverride?: string, switchTab?: boolean) => ({
             queryOverride,
@@ -347,6 +350,12 @@ export const sqlEditorLogic = kea<sqlEditorLogicType>([
         ],
     })),
     reducers(({ props }) => ({
+        selectedQueryTablesAndColumns: [
+            {} as Record<string, Record<string, boolean>>,
+            {
+                setSelectedQueryTablesAndColumns: (_, { tablesAndColumns }) => tablesAndColumns,
+            },
+        ],
         finishedLoading: [
             true,
             {
@@ -1195,6 +1204,10 @@ export const sqlEditorLogic = kea<sqlEditorLogicType>([
         },
     })),
     subscriptions(({ actions, values, cache }) => ({
+        queryInput: async (queryInput: string | null) => {
+            const result = await parseQueryTablesAndColumns(queryInput)
+            actions.setSelectedQueryTablesAndColumns(result)
+        },
         showLegacyFilters: (showLegacyFilters: boolean) => {
             if (showLegacyFilters) {
                 if (typeof values.sourceQuery.source.filters !== 'object') {
@@ -1556,17 +1569,9 @@ export const sqlEditorLogic = kea<sqlEditorLogicType>([
             },
         ],
 
-        selectedQueryTablesAndColumns: [
-            (s) => [s.queryInput],
-            (queryInput: string | null): Record<string, Record<string, boolean>> => {
-                return parseQueryTablesAndColumns(queryInput)
-            },
-        ],
         selectedQueryColumns: [
-            (s) => [s.queryInput],
-            (queryInput: string | null): Record<string, boolean> => {
-                const tablesAndColumns = parseQueryTablesAndColumns(queryInput)
-
+            (s) => [s.selectedQueryTablesAndColumns],
+            (tablesAndColumns: Record<string, Record<string, boolean>>): Record<string, boolean> => {
                 return Object.fromEntries(
                     Object.entries(tablesAndColumns).flatMap(([table, columns]) => {
                         return Object.keys(columns).map((column) => [`${table}.${column}`, true])
