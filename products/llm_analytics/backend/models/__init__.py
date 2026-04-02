@@ -7,6 +7,7 @@ from .model_configuration import POSTHOG_ALLOWED_MODELS, LLMModelConfiguration
 from .provider_keys import LLMProvider, LLMProviderKey
 from .review_queues import ReviewQueue, ReviewQueueItem
 from .score_definitions import ScoreDefinition, ScoreDefinitionVersion
+from .taggers import Tagger
 from .trace_reviews import TraceReview, TraceReviewScore
 
 __all__ = [
@@ -24,6 +25,7 @@ __all__ = [
     "ReviewQueueItem",
     "ScoreDefinition",
     "ScoreDefinitionVersion",
+    "Tagger",
     "TraceReview",
     "TraceReviewScore",
 ]
