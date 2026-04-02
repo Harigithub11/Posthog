@@ -101,6 +101,7 @@ class SignupSerializer(serializers.Serializer):
     referral_source_ai_prompt: serializers.Field = serializers.CharField(
         max_length=1000, required=False, allow_blank=True
     )
+    company_size: serializers.Field = serializers.CharField(max_length=20, required=False, allow_blank=True, default="")
     turnstile_token: serializers.Field = serializers.CharField(required=False, allow_blank=True, default="")
     challenge_nonce: serializers.Field = serializers.CharField(required=False, allow_blank=True, default="")
 
@@ -200,6 +201,7 @@ class SignupSerializer(serializers.Serializer):
         role_at_organization = validated_data.pop("role_at_organization", "")
         referral_source = validated_data.pop("referral_source", "")
         referral_source_ai_prompt = validated_data.pop("referral_source_ai_prompt", "")
+        company_size = validated_data.pop("company_size", "")
 
         # For passkey signup, set password to None and use the pre-generated UUID
         if passkey_credential:
@@ -268,6 +270,7 @@ class SignupSerializer(serializers.Serializer):
             role_at_organization=role_at_organization,
             referral_source=referral_source,
             referral_source_ai_prompt=referral_source_ai_prompt,
+            company_size=company_size,
         )
 
         verify_email_or_login(request, user)
@@ -573,6 +576,7 @@ class SocialSignupSerializer(serializers.Serializer):
     referral_source_ai_prompt: serializers.Field = serializers.CharField(
         max_length=1000, required=False, allow_blank=True, default=""
     )
+    company_size: serializers.Field = serializers.CharField(max_length=20, required=False, allow_blank=True, default="")
 
     def create(self, validated_data, **kwargs):
         request = self.context["request"]
@@ -587,6 +591,7 @@ class SocialSignupSerializer(serializers.Serializer):
         role_at_organization = validated_data["role_at_organization"]
         referral_source = validated_data.get("referral_source", "")
         referral_source_ai_prompt = validated_data.get("referral_source_ai_prompt", "")
+        company_size = validated_data.get("company_size", "")
         first_name = validated_data["first_name"]
 
         serializer = SignupSerializer(
@@ -598,6 +603,7 @@ class SocialSignupSerializer(serializers.Serializer):
                 "role_at_organization": role_at_organization,
                 "referral_source": referral_source,
                 "referral_source_ai_prompt": referral_source_ai_prompt,
+                "company_size": company_size,
             },
             context={"request": request},
         )
