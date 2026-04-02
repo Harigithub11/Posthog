@@ -23,6 +23,7 @@ use crate::{
     config::Config,
     kafka::{OffsetTracker, PartitionRouterConfig, PartitionWorkerConfig},
     rebalance_tracker::RebalanceTracker,
+    rocksdb::log_forwarder::RocksDbLogForwarder,
     rocksdb::store::init_shared_resources,
     store::DeduplicationStoreConfig,
     store_manager::{CleanupTaskHandle, StoreManager},
@@ -46,6 +47,7 @@ pub struct KafkaDeduplicatorService {
     service_health: Option<HealthHandle>,
     health_task_cancellation: CancellationToken,
     health_task_handles: Vec<tokio::task::JoinHandle<()>>,
+    rocksdb_log_forwarder: Option<RocksDbLogForwarder>,
 }
 
 impl KafkaDeduplicatorService {
@@ -94,6 +96,12 @@ impl KafkaDeduplicatorService {
         // Build RocksDB config from env overrides and initialize shared resources
         let rocksdb_config = config.build_rocksdb_config();
         init_shared_resources(&rocksdb_config);
+
+        // Start RocksDB log forwarder if a shared log directory is configured
+        let rocksdb_log_forwarder = rocksdb_config
+            .log_dir
+            .as_ref()
+            .map(|dir| RocksDbLogForwarder::start(dir.into()));
 
         // Create store configuration
         let store_config = DeduplicationStoreConfig {
@@ -150,6 +158,7 @@ impl KafkaDeduplicatorService {
             service_health: None,
             health_task_cancellation: CancellationToken::new(),
             health_task_handles: Vec::new(),
+            rocksdb_log_forwarder,
         })
     }
 
@@ -205,8 +214,11 @@ impl KafkaDeduplicatorService {
             max_concurrent_checkpoint_file_downloads: config
                 .max_concurrent_checkpoint_file_downloads,
             max_concurrent_checkpoint_file_uploads: config.max_concurrent_checkpoint_file_uploads,
+            max_upload_buffers_per_partition: config.max_upload_buffers_per_partition,
             checkpoint_partition_import_timeout: config.checkpoint_partition_import_timeout(),
+            checkpoint_stagger_delay: config.checkpoint_stagger_delay(),
             local_checkpoint_max_staleness: config.local_checkpoint_max_staleness(),
+            skip_export: config.checkpoint_skip_export,
         };
 
         // Reset local checkpoint directory on startup (it's temporary storage)
@@ -668,6 +680,12 @@ impl KafkaDeduplicatorService {
         if let Some(handle) = self.cleanup_task_handle.take() {
             info!("Stopping cleanup task...");
             handle.stop().await;
+        }
+
+        // Stop RocksDB log forwarder
+        if let Some(mut forwarder) = self.rocksdb_log_forwarder.take() {
+            info!("Stopping RocksDB log forwarder...");
+            forwarder.stop().await;
         }
 
         // Give some time for graceful shutdown

@@ -5,7 +5,9 @@ use bytesize::ByteSize;
 use common_continuous_profiling::ContinuousProfilingConfig;
 use envconfig::Envconfig;
 
-use crate::rocksdb::store::{parse_compression_per_level, parse_compression_type, RocksDbConfig};
+use crate::rocksdb::store::{
+    parse_compression_per_level, parse_compression_type, parse_rocksdb_log_level, RocksDbConfig,
+};
 
 /// Pipeline type for the deduplicator service.
 ///
@@ -84,7 +86,7 @@ pub struct Config {
     #[envconfig(default = "5000")] // 5 seconds
     pub kafka_producer_send_timeout_ms: u32,
 
-    #[envconfig(default = "snappy")]
+    #[envconfig(default = "lz4")]
     pub kafka_compression_codec: String,
 
     #[envconfig(default = "false")]
@@ -118,6 +120,14 @@ pub struct Config {
     pub rocksdb_compression_per_level: Option<String>,
     pub rocksdb_bottommost_compression_type: Option<String>,
     pub rocksdb_universal_compression_size_percent: Option<i32>,
+
+    // RocksDB internal log level (debug, info, warn, error, fatal, header). Default: warn.
+    #[envconfig(default = "warn")]
+    pub rocksdb_log_level: String,
+
+    // When set, all RocksDB instances write LOG files to this shared directory.
+    // A background task tails these files and forwards them through tracing (stdout/Loki).
+    pub rocksdb_log_dir: Option<String>,
 
     #[envconfig(default = "1073741824")]
     // 1GB default, supports: raw bytes, scientific notation (9.663676416e+09), or units (9Gi, 1GB)
@@ -242,8 +252,10 @@ pub struct Config {
     pub checkpoint_interval_secs: u64,
 
     // max checkpoint attempts to perform on a single pod at once. each
-    // concurrent attempt is against a different locally assigned partition
-    #[envconfig(default = "8")]
+    // concurrent attempt is against a different locally assigned partition.
+    // Default 1 ensures only one RocksDB flush happens at a time, avoiding
+    // compaction storms that cause memory spikes.
+    #[envconfig(default = "1")]
     pub max_concurrent_checkpoints: usize,
 
     #[envconfig(default = "200")]
@@ -291,10 +303,28 @@ pub struct Config {
     #[envconfig(default = "200")]
     pub max_concurrent_checkpoint_file_downloads: usize,
 
-    // Maximum concurrent S3 file uploads during checkpoint export
-    // Less critical than downloads since uploads are bounded by max_concurrent_checkpoints
+    // Maximum concurrent S3 file uploads during checkpoint export (global LimitStore semaphore).
+    // Bounds total S3 API concurrency across all partition checkpoints.
     #[envconfig(default = "200")]
     pub max_concurrent_checkpoint_file_uploads: usize,
+
+    // Maximum concurrent upload buffers per partition checkpoint.
+    // Each active upload holds ~18MB (8MB read buffer + ~10MB BufWriter).
+    // With max_concurrent_checkpoints=8, worst case memory is
+    // 8 × this value × 18MB, so 25 × 8 = 200 buffers ≈ 3.6GB.
+    #[envconfig(default = "25")]
+    pub max_upload_buffers_per_partition: usize,
+
+    // Delay in seconds between starting each partition's checkpoint within a cycle.
+    // Spreads out RocksDB flushes to avoid compaction storms that cause memory spikes.
+    // 0 = auto-calculate (checkpoint_interval / partition_count).
+    #[envconfig(default = "0")]
+    pub checkpoint_stagger_delay_secs: u64,
+
+    // When true, checkpoint workers perform the RocksDB flush but skip the S3 upload.
+    // Use to isolate whether memory spikes come from the flush/compaction or the upload.
+    #[envconfig(default = "false")]
+    pub checkpoint_skip_export: bool,
 
     // Maximum time allowed for a complete checkpoint import for a single partition (seconds).
     // This includes listing checkpoints, downloading metadata, and downloading all files.
@@ -555,6 +585,15 @@ impl Config {
             universal_compression_size_percent: self
                 .rocksdb_universal_compression_size_percent
                 .unwrap_or(defaults.universal_compression_size_percent),
+            log_level: parse_rocksdb_log_level(&self.rocksdb_log_level).unwrap_or_else(|e| {
+                tracing::warn!(
+                    value = self.rocksdb_log_level,
+                    error = %e,
+                    "invalid ROCKSDB_LOG_LEVEL, using default (warn)"
+                );
+                defaults.log_level
+            }),
+            log_dir: self.rocksdb_log_dir.clone(),
         };
 
         if config.compression_per_level.is_some() && config.universal_compression_size_percent < 0 {
@@ -609,6 +648,11 @@ impl Config {
     /// Get checkpoint partition import timeout as Duration
     pub fn checkpoint_partition_import_timeout(&self) -> Duration {
         Duration::from_secs(self.checkpoint_partition_import_timeout_secs)
+    }
+
+    /// Get checkpoint stagger delay as Duration (0 = auto-calculate)
+    pub fn checkpoint_stagger_delay(&self) -> Duration {
+        Duration::from_secs(self.checkpoint_stagger_delay_secs)
     }
 
     /// Get max staleness for local checkpoint data as Duration

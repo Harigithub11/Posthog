@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use futures::stream::FuturesUnordered;
+use futures::stream;
 use futures::StreamExt;
 use object_store::buffered::BufWriter;
 use object_store::path::Path as ObjectPath;
@@ -57,6 +57,27 @@ async fn read_chunk_cancellable(
             Ok(n) => ChunkResult::Data(n),
             Err(e) => ChunkResult::Error(e),
         },
+    }
+}
+
+/// Hint the kernel to evict page cache pages for a file after it has been fully read.
+/// This is a best-effort operation: failure is logged but does not abort the upload.
+/// Only effective on Linux; a no-op on other platforms.
+fn advise_dontneed(file: &File, path: &Path) {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::io::AsRawFd;
+        let fd = file.as_raw_fd();
+        // SAFETY: fd is valid for the lifetime of `file`, and posix_fadvise is safe to call
+        // with any fd/offset/len combination — invalid values simply return an error code.
+        let ret = unsafe { libc::posix_fadvise(fd, 0, 0, libc::POSIX_FADV_DONTNEED) };
+        if ret != 0 {
+            tracing::debug!("posix_fadvise(DONTNEED) returned {ret} for {path:?} (non-fatal)");
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (file, path);
     }
 }
 
@@ -157,6 +178,11 @@ impl S3Uploader {
             }
         }
 
+        // Hint the kernel to evict page cache pages for this file. Checkpoint SST files
+        // are read once for upload and never accessed again, but the kernel keeps them
+        // cached, inflating container_memory_working_set_bytes and triggering OOM kills.
+        advise_dontneed(&file, local_path);
+
         // Finalize the upload (triggers CompleteMultipartUpload API call for large files)
         upload
             .shutdown()
@@ -214,29 +240,41 @@ impl CheckpointUploader for S3Uploader {
             .map(|parent| parent.child_token())
             .unwrap_or_default();
 
-        // Build upload futures using FuturesUnordered for early exit with sibling cancellation.
-        // LimitStore's semaphore still limits concurrent S3 requests.
-        let mut futures: FuturesUnordered<_> = plan
+        // Collect upload tasks as owned (src, dest) pairs upfront to avoid
+        // lifetime issues with buffer_unordered requiring 'static futures.
+        let upload_tasks: Vec<_> = plan
             .files_to_upload
             .iter()
             .map(|local_file| {
-                let src = local_file.local_path.clone();
-                let dest = plan.info.get_file_key(&local_file.filename);
-                let token = upload_token.clone();
-
-                async move {
-                    self.upload_file_cancellable(&src, &dest, Some(&token))
-                        .await?;
-                    Ok::<String, anyhow::Error>(dest)
-                }
+                (
+                    local_file.local_path.clone(),
+                    plan.info.get_file_key(&local_file.filename),
+                )
             })
             .collect();
+
+        // Build upload stream with bounded per-partition concurrency.
+        // buffer_unordered limits how many futures are polled simultaneously,
+        // preventing memory spikes from all upload buffers (~18MB each) being
+        // allocated at once when a partition has many SST files.
+        // This is separate from LimitStore which bounds global S3 API concurrency.
+        let max_concurrent = self.config.max_upload_buffers_per_partition;
+        let mut upload_stream = stream::iter(upload_tasks.into_iter().map(|(src, dest)| {
+            let token = upload_token.clone();
+
+            async move {
+                self.upload_file_cancellable(&src, &dest, Some(&token))
+                    .await?;
+                Ok::<String, anyhow::Error>(dest)
+            }
+        }))
+        .buffer_unordered(max_concurrent);
 
         let mut uploaded_keys = Vec::with_capacity(plan.files_to_upload.len());
         let mut first_error: Option<anyhow::Error> = None;
 
         // Process completions, cancel siblings on first error
-        while let Some(result) = futures.next().await {
+        while let Some(result) = upload_stream.next().await {
             match result {
                 Ok(key) => uploaded_keys.push(key),
                 Err(e) => {
@@ -249,7 +287,7 @@ impl CheckpointUploader for S3Uploader {
         }
 
         // Drain remaining futures - they'll exit quickly due to cancellation
-        while futures.next().await.is_some() {}
+        while upload_stream.next().await.is_some() {}
 
         // Return early on error - DO NOT upload metadata
         if let Some(e) = first_error {
