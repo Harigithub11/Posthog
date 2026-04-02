@@ -157,6 +157,9 @@
                           },
                           uuid: {
                             hidden: False
+                          },
+                          validated_schema_version: {
+                            hidden: False
                           }
                         },
                         hidden: False,
@@ -361,6 +364,13 @@
                   alias: "uuid"
                   type: {
                     name: "uuid"
+                    table_type: <recursion ...>
+                  }
+                },
+                validated_schema_version: {
+                  alias: "validated_schema_version"
+                  type: {
+                    name: "validated_schema_version"
                     table_type: <recursion ...>
                   }
                 }
@@ -662,6 +672,25 @@
         hidden: True
         type: {
           alias: "$group_4"
+          type: <recursion ...>
+        }
+      },
+      {
+        alias: "validated_schema_version"
+        expr: {
+          chain: [
+            "validated_schema_version"
+          ]
+          from_asterisk: True
+          type: {
+            name: "validated_schema_version"
+            table_type: <recursion ...>
+          }
+        }
+        from_asterisk: False
+        hidden: True
+        type: {
+          alias: "validated_schema_version"
           type: <recursion ...>
         }
       },
@@ -1164,6 +1193,19 @@
             type: <recursion ...>
           },
           {
+            alias: "validated_schema_version"
+            expr: {
+              chain: [
+                "validated_schema_version"
+              ]
+              from_asterisk: True
+              type: <recursion ...>
+            }
+            from_asterisk: False
+            hidden: True
+            type: <recursion ...>
+          },
+          {
             alias: "elements_chain_href"
             expr: {
               chain: [
@@ -1508,7 +1550,8 @@
         person_mode: <recursion ...>,
         properties: <recursion ...>,
         timestamp: <recursion ...>,
-        uuid: <recursion ...>
+        uuid: <recursion ...>,
+        validated_schema_version: <recursion ...>
       }
       ctes: {}
       is_lambda_type: False
@@ -1669,6 +1712,9 @@
                     hidden: False
                   },
                   uuid: {
+                    hidden: False
+                  },
+                  validated_schema_version: {
                     hidden: False
                   }
                 },
@@ -2143,6 +2189,25 @@
         }
       },
       {
+        alias: "validated_schema_version"
+        expr: {
+          chain: [
+            "validated_schema_version"
+          ]
+          from_asterisk: True
+          type: {
+            name: "validated_schema_version"
+            table_type: <recursion ...>
+          }
+        }
+        from_asterisk: False
+        hidden: True
+        type: {
+          alias: "validated_schema_version"
+          type: <recursion ...>
+        }
+      },
+      {
         alias: "elements_chain_href"
         expr: {
           chain: [
@@ -2549,7 +2614,8 @@
         person_mode: <recursion ...>,
         properties: <recursion ...>,
         timestamp: <recursion ...>,
-        uuid: <recursion ...>
+        uuid: <recursion ...>,
+        validated_schema_version: <recursion ...>
       }
       ctes: {}
       is_lambda_type: False
@@ -3713,6 +3779,9 @@
                           },
                           uuid: {
                             hidden: False
+                          },
+                          validated_schema_version: {
+                            hidden: False
                           }
                         },
                         hidden: False,
@@ -3917,6 +3986,13 @@
                   alias: "uuid"
                   type: {
                     name: "uuid"
+                    table_type: <recursion ...>
+                  }
+                },
+                validated_schema_version: {
+                  alias: "validated_schema_version"
+                  type: {
+                    name: "validated_schema_version"
                     table_type: <recursion ...>
                   }
                 }
@@ -4218,6 +4294,25 @@
         hidden: True
         type: {
           alias: "$group_4"
+          type: <recursion ...>
+        }
+      },
+      {
+        alias: "validated_schema_version"
+        expr: {
+          chain: [
+            "validated_schema_version"
+          ]
+          from_asterisk: True
+          type: {
+            name: "validated_schema_version"
+            table_type: <recursion ...>
+          }
+        }
+        from_asterisk: False
+        hidden: True
+        type: {
+          alias: "validated_schema_version"
           type: <recursion ...>
         }
       },
@@ -4721,6 +4816,19 @@
               type: <recursion ...>
             },
             {
+              alias: "validated_schema_version"
+              expr: {
+                chain: [
+                  "validated_schema_version"
+                ]
+                from_asterisk: True
+                type: <recursion ...>
+              }
+              from_asterisk: False
+              hidden: True
+              type: <recursion ...>
+            },
+            {
               alias: "elements_chain_href"
               expr: {
                 chain: [
@@ -5184,6 +5292,9 @@
                               hidden: False
                             },
                             uuid: {
+                              hidden: False
+                            },
+                            validated_schema_version: {
                               hidden: False
                             }
                           },
@@ -5658,6 +5769,25 @@
                   }
                 },
                 {
+                  alias: "validated_schema_version"
+                  expr: {
+                    chain: [
+                      "validated_schema_version"
+                    ]
+                    from_asterisk: True
+                    type: {
+                      name: "validated_schema_version"
+                      table_type: <recursion ...>
+                    }
+                  }
+                  from_asterisk: False
+                  hidden: True
+                  type: {
+                    alias: "validated_schema_version"
+                    type: <recursion ...>
+                  }
+                },
+                {
                   alias: "elements_chain_href"
                   expr: {
                     chain: [
@@ -6064,7 +6194,8 @@
                   person_mode: <recursion ...>,
                   properties: <recursion ...>,
                   timestamp: <recursion ...>,
-                  uuid: <recursion ...>
+                  uuid: <recursion ...>,
+                  validated_schema_version: <recursion ...>
                 }
                 ctes: {}
                 is_lambda_type: False
@@ -6113,7 +6244,8 @@
         person_mode: <recursion ...>,
         properties: <recursion ...>,
         timestamp: <recursion ...>,
-        uuid: <recursion ...>
+        uuid: <recursion ...>,
+        validated_schema_version: <recursion ...>
       }
       ctes: {}
       is_lambda_type: False
@@ -6501,6 +6633,9 @@
                     hidden: False
                   },
                   uuid: {
+                    hidden: False
+                  },
+                  validated_schema_version: {
                     hidden: False
                   }
                 },
@@ -6975,6 +7110,25 @@
         }
       },
       {
+        alias: "validated_schema_version"
+        expr: {
+          chain: [
+            "validated_schema_version"
+          ]
+          from_asterisk: True
+          type: {
+            name: "validated_schema_version"
+            table_type: <recursion ...>
+          }
+        }
+        from_asterisk: False
+        hidden: True
+        type: {
+          alias: "validated_schema_version"
+          type: <recursion ...>
+        }
+      },
+      {
         alias: "elements_chain_href"
         expr: {
           chain: [
@@ -7381,7 +7535,8 @@
         person_mode: <recursion ...>,
         properties: <recursion ...>,
         timestamp: <recursion ...>,
-        uuid: <recursion ...>
+        uuid: <recursion ...>,
+        validated_schema_version: <recursion ...>
       }
       ctes: {}
       is_lambda_type: False
@@ -7543,6 +7698,9 @@
                       hidden: False
                     },
                     uuid: {
+                      hidden: False
+                    },
+                    validated_schema_version: {
                       hidden: False
                     }
                   },
@@ -8018,6 +8176,25 @@
         }
       },
       {
+        alias: "validated_schema_version"
+        expr: {
+          chain: [
+            "validated_schema_version"
+          ]
+          from_asterisk: True
+          type: {
+            name: "validated_schema_version"
+            table_type: <recursion ...>
+          }
+        }
+        from_asterisk: False
+        hidden: True
+        type: {
+          alias: "validated_schema_version"
+          type: <recursion ...>
+        }
+      },
+      {
         alias: "elements_chain_href"
         expr: {
           chain: [
@@ -8425,7 +8602,8 @@
         person_mode: <recursion ...>,
         properties: <recursion ...>,
         timestamp: <recursion ...>,
-        uuid: <recursion ...>
+        uuid: <recursion ...>,
+        validated_schema_version: <recursion ...>
       }
       ctes: {}
       is_lambda_type: False
@@ -8587,6 +8765,9 @@
                         hidden: False
                       },
                       uuid: {
+                        hidden: False
+                      },
+                      validated_schema_version: {
                         hidden: False
                       }
                     },
@@ -8804,6 +8985,9 @@
                         hidden: False
                       },
                       uuid: {
+                        hidden: False
+                      },
+                      validated_schema_version: {
                         hidden: False
                       }
                     },
@@ -9341,6 +9525,9 @@
                   },
                   uuid: {
                     hidden: False
+                  },
+                  validated_schema_version: {
+                    hidden: False
                   }
                 },
                 hidden: False,
@@ -9590,6 +9777,9 @@
                       hidden: False
                     },
                     uuid: {
+                      hidden: False
+                    },
+                    validated_schema_version: {
                       hidden: False
                     }
                   },
@@ -9844,6 +10034,9 @@
                         hidden: False
                       },
                       uuid: {
+                        hidden: False
+                      },
+                      validated_schema_version: {
                         hidden: False
                       }
                     },
@@ -10138,6 +10331,9 @@
                                 hidden: False
                               },
                               uuid: {
+                                hidden: False
+                              },
+                              validated_schema_version: {
                                 hidden: False
                               }
                             },
@@ -10439,6 +10635,9 @@
                   },
                   uuid: {
                     hidden: False
+                  },
+                  validated_schema_version: {
+                    hidden: False
                   }
                 },
                 hidden: False,
@@ -10698,6 +10897,9 @@
                       hidden: False
                     },
                     uuid: {
+                      hidden: False
+                    },
+                    validated_schema_version: {
                       hidden: False
                     }
                   },
@@ -10960,6 +11162,9 @@
                   },
                   uuid: {
                     hidden: False
+                  },
+                  validated_schema_version: {
+                    hidden: False
                   }
                 },
                 hidden: False,
@@ -11206,6 +11411,9 @@
                       hidden: False
                     },
                     uuid: {
+                      hidden: False
+                    },
+                    validated_schema_version: {
                       hidden: False
                     }
                   },
@@ -11559,6 +11767,9 @@
                     },
                     uuid: {
                       hidden: False
+                    },
+                    validated_schema_version: {
+                      hidden: False
                     }
                   },
                   hidden: False,
@@ -11769,6 +11980,9 @@
                           hidden: False
                         },
                         uuid: {
+                          hidden: False
+                        },
+                        validated_schema_version: {
                           hidden: False
                         }
                       },
@@ -11992,6 +12206,9 @@
                     hidden: False
                   },
                   uuid: {
+                    hidden: False
+                  },
+                  validated_schema_version: {
                     hidden: False
                   }
                 },
