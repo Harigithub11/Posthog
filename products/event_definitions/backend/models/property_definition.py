@@ -50,16 +50,16 @@ class PropertyDefinition(UUIDTModel):
         default=False
     )  # whether the property can be interpreted as a number, and therefore used for math aggregation operations
 
-    property_type = models.CharField(max_length=50, choices=PropertyType.choices, blank=True, null=True)
+    property_type = models.CharField(max_length=50, choices=PropertyType, blank=True, null=True)
 
     # :TRICKY: May be null for historical events
-    type = models.PositiveSmallIntegerField(default=Type.EVENT, choices=Type.choices)
+    type = models.PositiveSmallIntegerField(default=Type.EVENT, choices=Type)
     # Only populated for `Type.GROUP`
     group_type_index = models.PositiveSmallIntegerField(null=True)
 
     # DEPRECATED
     property_type_format = models.CharField(
-        max_length=50, choices=PropertyFormat.choices, blank=True, null=True
+        max_length=50, choices=PropertyFormat, blank=True, null=True
     )  # Deprecated in #8292
 
     # DEPRECATED
