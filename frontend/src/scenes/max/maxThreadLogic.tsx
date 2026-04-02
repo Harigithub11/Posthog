@@ -1211,8 +1211,12 @@ export const maxThreadLogic = kea<maxThreadLogicType>([
                 return
             }
 
-            // Sync conversation data
+            // Sync conversation data and thread in the same dispatch so there's
+            // no render frame where loading is done but the thread is still empty.
             actions.setConversation(conversation)
+            if (conversation.messages?.length && !values.threadRaw.length) {
+                actions.setThread(updateMessagesWithCompletedStatus(conversation.messages))
+            }
 
             if (conversation.status === ConversationStatus.InProgress) {
                 setTimeout(() => {
@@ -1774,20 +1778,26 @@ export const maxThreadLogic = kea<maxThreadLogicType>([
         if (values.autoRun && values.question) {
             actions.askMax(values.question)
             actions.setAutoRun(false)
-        } else if (
-            props.conversation?.status === ConversationStatus.InProgress &&
-            !values.streamingActive &&
-            !cache.generationController
-        ) {
-            // Don't auto-reconnect if there's a pending form - the user needs to fill it out first
-            // The form submission will properly resume the conversation with the answers
-            if (values.multiQuestionFormPending) {
-                return
+        } else {
+            if (props.conversation?.messages.length === 0 && logic.values.threadRaw.length === 0) {
+                actions.loadConversation(props.conversation.id)
             }
-            // If the conversation is in progress and we don't have an active stream, reconnect
-            setTimeout(() => {
-                actions.reconnectToStream()
-            }, 0)
+
+            if (
+                props.conversation?.status === ConversationStatus.InProgress &&
+                !values.streamingActive &&
+                !cache.generationController
+            ) {
+                // Don't auto-reconnect if there's a pending form - the user needs to fill it out first
+                // The form submission will properly resume the conversation with the answers
+                if (values.multiQuestionFormPending) {
+                    return
+                }
+                // If the conversation is in progress and we don't have an active stream, reconnect
+                setTimeout(() => {
+                    actions.reconnectToStream()
+                }, 0)
+            }
         }
     }),
 
