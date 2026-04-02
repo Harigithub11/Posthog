@@ -17312,6 +17312,17 @@
             "required": ["key", "operator", "type", "value"],
             "type": "object"
         },
+        "FormDismissPayload": {
+            "additionalProperties": false,
+            "properties": {
+                "action": {
+                    "const": "dismiss_form",
+                    "type": "string"
+                }
+            },
+            "required": ["action"],
+            "type": "object"
+        },
         "FormResumePayload": {
             "additionalProperties": false,
             "properties": {
@@ -30823,6 +30834,9 @@
                 },
                 {
                     "$ref": "#/definitions/FormResumePayload"
+                },
+                {
+                    "$ref": "#/definitions/FormDismissPayload"
                 }
             ]
         },
