@@ -1,6 +1,9 @@
 import { MOCK_DEFAULT_PROJECT } from 'lib/api.mock'
 
+import { router } from 'kea-router'
 import { expectLogic, partial } from 'kea-test-utils'
+
+import { urls } from 'scenes/urls'
 
 import { useMocks } from '~/mocks/jest'
 import { initKeaTests } from '~/test/init'
@@ -139,6 +142,99 @@ describe('featureFlagLogic', () => {
     afterEach(() => {
         logic.unmount()
         jest.useRealTimers()
+    })
+
+    describe('draft preservation on tab switch', () => {
+        it.each([
+            {
+                name: 'key and name filled in',
+                edits: { key: 'my-draft-key', name: 'Draft' },
+                check: (flag: FeatureFlagType) => {
+                    expect(flag.key).toEqual('my-draft-key')
+                    expect(flag.name).toEqual('Draft')
+                },
+            },
+            {
+                name: 'rollout percentage changed',
+                edits: {
+                    filters: {
+                        ...NEW_FLAG.filters,
+                        groups: [{ properties: [], rollout_percentage: 50, variant: null }],
+                    },
+                },
+                check: (flag: FeatureFlagType) => {
+                    expect(flag.filters.groups[0].rollout_percentage).toEqual(50)
+                },
+            },
+            {
+                name: 'property filter added to group',
+                edits: {
+                    filters: {
+                        ...NEW_FLAG.filters,
+                        groups: [
+                            {
+                                properties: [
+                                    {
+                                        key: 'email',
+                                        type: PropertyFilterType.Person,
+                                        value: '@example.com',
+                                        operator: PropertyOperator.IContains,
+                                    },
+                                ],
+                                rollout_percentage: 0,
+                                variant: null,
+                            },
+                        ],
+                    },
+                },
+                check: (flag: FeatureFlagType) => {
+                    expect(flag.filters.groups[0].properties).toHaveLength(1)
+                },
+            },
+        ])('preserves draft when $name', async ({ edits, check }) => {
+            const newLogic = featureFlagLogic({ id: 'new' })
+            newLogic.mount()
+
+            useMocks({
+                get: {
+                    [`/api/projects/${MOCK_DEFAULT_PROJECT.id}/feature_flags/`]: () => [200, { results: [] }],
+                    [`/api/projects/${MOCK_DEFAULT_PROJECT.id}/feature_flags/new/`]: () => [200, NEW_FLAG],
+                },
+            })
+
+            await expectLogic(newLogic).toFinishAllListeners()
+
+            await expectLogic(newLogic, () => {
+                newLogic.actions.setFeatureFlag({ ...newLogic.values.featureFlag, ...edits })
+            })
+
+            router.actions.push(urls.featureFlag('new'))
+            await expectLogic(newLogic).toFinishAllListeners()
+
+            check(newLogic.values.featureFlag)
+
+            newLogic.unmount()
+        })
+
+        it('reloads when no draft changes exist', async () => {
+            const newLogic = featureFlagLogic({ id: 'new' })
+            newLogic.mount()
+
+            useMocks({
+                get: {
+                    [`/api/projects/${MOCK_DEFAULT_PROJECT.id}/feature_flags/`]: () => [200, { results: [] }],
+                    [`/api/projects/${MOCK_DEFAULT_PROJECT.id}/feature_flags/new/`]: () => [200, NEW_FLAG],
+                },
+            })
+
+            await expectLogic(newLogic).toFinishAllListeners()
+
+            router.actions.push(urls.featureFlag('new'))
+
+            await expectLogic(newLogic).toDispatchActions(['loadFeatureFlag'])
+
+            newLogic.unmount()
+        })
     })
 
     describe('setMultivariateEnabled functionality', () => {
