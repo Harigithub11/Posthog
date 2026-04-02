@@ -345,6 +345,27 @@ def try_to_store_error_count(playlist_short_id: str | None) -> None:
         pass
 
 
+def parse_expiry(expiry: str | None) -> datetime | None:
+    if expiry is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(expiry)
+        if parsed.tzinfo is None:
+            parsed = timezone.make_aware(parsed)
+        return parsed
+    except (ValueError, TypeError):
+        return None
+
+
+def is_session_unexpired(expiry: str | None, now: datetime) -> bool:
+    if expiry is None:
+        return True
+    parsed = parse_expiry(expiry)
+    if parsed is None:
+        return False
+    return parsed >= now
+
+
 def safe_seconds_difference(dt1: datetime, dt2: datetime) -> int:
     """
     Returns the difference in seconds between two datetime objects,
@@ -422,12 +443,11 @@ def count_recordings_that_match_playlist_filters(playlist_id: int) -> None:
 
             query = convert_playlist_to_recordings_query(playlist)
 
-            # if we already have some data and the query is sorted by start_time,
-            # we can query only new recordings, to (hopefully) reduce load on CH
             has_existing_data = existing_value.get("refreshed_at", None)
             can_query_only_new_recordings = query.order == "start_time"
+            has_versioned_expiry_data = existing_value.get("version") == 2
 
-            if has_existing_data and can_query_only_new_recordings:
+            if has_existing_data and can_query_only_new_recordings and has_versioned_expiry_data:
                 query.date_from = existing_value["refreshed_at"]
 
             (recordings, more_recordings_available, _, _) = list_recordings_from_query(
@@ -435,16 +455,21 @@ def count_recordings_that_match_playlist_filters(playlist_id: int) -> None:
             )
 
             counted_at_date = timezone.now()
-            new_session_ids = [r.session_id for r in recordings]
+            new_sessions = {r.session_id: r.expiry_time.isoformat() if r.expiry_time else None for r in recordings}
 
-            if has_existing_data and can_query_only_new_recordings:
-                # these results are only used for counting and checking if unwatched
-                # so we can merge them without caring about order
-                new_session_ids = list(set(new_session_ids + existing_value["session_ids"]))
+            if has_existing_data and can_query_only_new_recordings and has_versioned_expiry_data:
+                existing_sessions = existing_value.get("sessions_with_expiry", {})
+                for sid, expiry in existing_sessions.items():
+                    if sid in new_sessions:
+                        continue
+                    if is_session_unexpired(expiry, counted_at_date):
+                        new_sessions[sid] = expiry
 
             value_to_set = json.dumps(
                 {
-                    "session_ids": new_session_ids,
+                    "version": 2,
+                    "session_ids": list(new_sessions.keys()),
+                    "sessions_with_expiry": new_sessions,
                     "has_more": more_recordings_available,
                     "previous_ids": existing_value.get("session_ids", None),
                     "refreshed_at": counted_at_date.isoformat(),
@@ -466,7 +491,7 @@ def count_recordings_that_match_playlist_filters(playlist_id: int) -> None:
                     "team_id": playlist.team.pk,
                     "saved_filters_short_id": playlist.short_id,
                     "saved_filters_name": playlist.name or playlist.derived_name,
-                    "count": len(new_session_ids),
+                    "count": len(new_sessions),
                     "previous_count": len(existing_value.get("session_ids", [])),
                 },
             )

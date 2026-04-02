@@ -1,13 +1,18 @@
 import json
 import random
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 from freezegun import freeze_time
 from posthog.test.base import APIBaseTest, QueryMatchingTest, snapshot_postgres_queries
-from unittest import mock
+from unittest import (
+    TestCase as UnitTestCase,
+    mock,
+)
 from unittest.mock import MagicMock, call, patch
 
 from django.utils import timezone
+
+from parameterized import parameterized
 
 from posthog.schema import (
     FilterLogicalOperator,
@@ -26,6 +31,8 @@ from posthog.session_recordings.playlist_counters.recordings_that_match_playlist
     DEFAULT_RECORDING_FILTERS,
     count_recordings_that_match_playlist_filters,
     enqueue_recordings_that_match_playlist_filters,
+    is_session_unexpired,
+    parse_expiry,
 )
 from posthog.session_recordings.session_recording_playlist_api import PLAYLIST_COUNT_REDIS_PREFIX
 
@@ -59,7 +66,9 @@ class TestRecordingsThatMatchPlaylistFilters(APIBaseTest, QueryMatchingTest):
         mock_capture_exception.assert_not_called()
 
         assert self._get_counts_from_redis(playlist) == {
+            "version": 2,
             "session_ids": [],
+            "sessions_with_expiry": {},
             "previous_ids": None,
             "has_more": False,
             "refreshed_at": mock.ANY,
@@ -94,7 +103,9 @@ class TestRecordingsThatMatchPlaylistFilters(APIBaseTest, QueryMatchingTest):
         mock_capture_exception.assert_not_called()
 
         assert self._get_counts_from_redis(playlist) == {
+            "version": 2,
             "session_ids": ["123"],
+            "sessions_with_expiry": {"123": None},
             "previous_ids": None,
             "has_more": True,
             "refreshed_at": mock.ANY,
@@ -132,7 +143,9 @@ class TestRecordingsThatMatchPlaylistFilters(APIBaseTest, QueryMatchingTest):
         mock_capture_exception.assert_not_called()
 
         assert self._get_counts_from_redis(playlist) == {
+            "version": 2,
             "session_ids": ["123"],
+            "sessions_with_expiry": {"123": None},
             "has_more": True,
             "previous_ids": ["245"],
             "refreshed_at": mock.ANY,
@@ -419,10 +432,9 @@ class TestRecordingsThatMatchPlaylistFilters(APIBaseTest, QueryMatchingTest):
     @patch(
         "posthog.session_recordings.playlist_counters.recordings_that_match_playlist_filters.list_recordings_from_query"
     )
-    def test_count_recordings_only_queries_since_last_count(
+    def test_unversioned_cached_data_triggers_full_query(
         self, mock_list_recordings_from_query: MagicMock, mock_capture_exception: MagicMock
     ):
-        # Given a playlist that was previously counted
         playlist = SessionRecordingPlaylist.objects.create(
             team=self.team,
             name="test",
@@ -430,13 +442,12 @@ class TestRecordingsThatMatchPlaylistFilters(APIBaseTest, QueryMatchingTest):
         )
 
         last_count_time = timezone.now() - timedelta(hours=2)
-        existing_sessions = ["session1", "session2"]
 
         self.redis_client.set(
             f"{PLAYLIST_COUNT_REDIS_PREFIX}{playlist.short_id}",
             json.dumps(
                 {
-                    "session_ids": existing_sessions,
+                    "session_ids": ["session1", "session2"],
                     "has_more": False,
                     "refreshed_at": last_count_time.isoformat(),
                     "error_count": 0,
@@ -445,31 +456,109 @@ class TestRecordingsThatMatchPlaylistFilters(APIBaseTest, QueryMatchingTest):
             ),
         )
 
-        # When we run the count task again
-        mock_list_recordings_from_query.return_value = (
-            [
-                SessionRecording.objects.create(
-                    team=self.team,
-                    session_id="session3",
-                )
-            ],
-            False,
-            None,
-            None,
-        )
+        new_recording = SessionRecording(session_id="session3", team=self.team)
+        new_recording.expiry_time = timezone.now() + timedelta(days=10)
+        mock_list_recordings_from_query.return_value = ([new_recording], False, None, None)
 
         count_recordings_that_match_playlist_filters(playlist.id)
 
-        # Then we should only query for recordings since the last count
+        recordings_query = mock_list_recordings_from_query.call_args[0][0]
+        assert recordings_query.date_from == "-21d"
+
+        stored_data = self._get_counts_from_redis(playlist)
+        assert stored_data["session_ids"] == ["session3"]
+        assert stored_data["version"] == 2
+
+        mock_capture_exception.assert_not_called()
+
+    @parameterized.expand(
+        [
+            (
+                "merges_unexpired_cached_sessions_with_new_results",
+                {"session1": (timezone.now() + timedelta(days=10)).isoformat()},
+                "session_new",
+                (timezone.now() + timedelta(days=5)).isoformat(),
+                ["session1", "session_new"],
+            ),
+            (
+                "evicts_expired_cached_sessions",
+                {"session_expired": (timezone.now() - timedelta(days=1)).isoformat()},
+                "session_new",
+                (timezone.now() + timedelta(days=5)).isoformat(),
+                ["session_new"],
+            ),
+            (
+                "keeps_cached_sessions_with_no_expiry",
+                {"session_no_expiry": None},
+                "session_new",
+                (timezone.now() + timedelta(days=5)).isoformat(),
+                ["session_new", "session_no_expiry"],
+            ),
+            (
+                "treats_malformed_expiry_as_expired",
+                {"session_bad": "not-a-date"},
+                "session_new",
+                (timezone.now() + timedelta(days=5)).isoformat(),
+                ["session_new"],
+            ),
+            (
+                "new_result_overwrites_cached_expiry_for_same_session",
+                {"session_shared": (timezone.now() - timedelta(days=1)).isoformat()},
+                "session_shared",
+                (timezone.now() + timedelta(days=5)).isoformat(),
+                ["session_shared"],
+            ),
+        ]
+    )
+    @patch("posthoganalytics.capture_exception")
+    @patch(
+        "posthog.session_recordings.playlist_counters.recordings_that_match_playlist_filters.list_recordings_from_query"
+    )
+    def test_incremental_query_with_expiry_awareness(
+        self,
+        _name: str,
+        cached_sessions_with_expiry: dict[str, str | None],
+        new_session_id: str,
+        new_expiry: str | None,
+        expected_session_ids: list[str],
+        mock_list_recordings_from_query: MagicMock,
+        mock_capture_exception: MagicMock,
+    ):
+        playlist = SessionRecordingPlaylist.objects.create(
+            team=self.team,
+            name="test",
+            filters={"date_from": "-21d"},
+        )
+
+        last_count_time = timezone.now() - timedelta(hours=2)
+
+        self.redis_client.set(
+            f"{PLAYLIST_COUNT_REDIS_PREFIX}{playlist.short_id}",
+            json.dumps(
+                {
+                    "version": 2,
+                    "session_ids": list(cached_sessions_with_expiry.keys()),
+                    "sessions_with_expiry": cached_sessions_with_expiry,
+                    "has_more": False,
+                    "refreshed_at": last_count_time.isoformat(),
+                    "error_count": 0,
+                    "errored_at": None,
+                }
+            ),
+        )
+
+        new_recording = SessionRecording(session_id=new_session_id, team=self.team)
+        new_recording.expiry_time = datetime.fromisoformat(new_expiry) if new_expiry else None
+        mock_list_recordings_from_query.return_value = ([new_recording], False, None, None)
+
+        count_recordings_that_match_playlist_filters(playlist.id)
+
         recordings_query = mock_list_recordings_from_query.call_args[0][0]
         assert recordings_query.date_from == last_count_time.isoformat()
-        assert recordings_query.date_to is None
 
-        # And the results should be merged with the existing sessions
         stored_data = self._get_counts_from_redis(playlist)
-        assert sorted(stored_data["session_ids"]) == ["session1", "session2", "session3"]
-        assert stored_data["has_more"] is False
-        assert stored_data["refreshed_at"] > last_count_time.isoformat()
+        assert sorted(stored_data["session_ids"]) == sorted(expected_session_ids)
+        assert stored_data["version"] == 2
 
         mock_capture_exception.assert_not_called()
 
@@ -524,3 +613,34 @@ class TestRecordingsThatMatchPlaylistFilters(APIBaseTest, QueryMatchingTest):
         enqueue_recordings_that_match_playlist_filters()
         # Should not be called for playlist with pinned items
         assert playlist.id not in [call_args[0][0] for call_args in mock_count_task.delay.call_args_list]
+
+
+class TestParseExpiry(UnitTestCase):
+    @parameterized.expand(
+        [
+            ("none_returns_none", None, None),
+            ("malformed_returns_none", "not-a-date", None),
+            ("empty_string_returns_none", "", None),
+            ("valid_aware_datetime", "2026-01-15T10:00:00+00:00", datetime(2026, 1, 15, 10, 0, tzinfo=UTC)),
+            (
+                "valid_naive_datetime_becomes_aware",
+                "2026-01-15T10:00:00",
+                datetime(2026, 1, 15, 10, 0, tzinfo=UTC),
+            ),
+        ]
+    )
+    def test_parse_expiry(self, _name: str, expiry: str | None, expected: datetime | None):
+        assert parse_expiry(expiry) == expected
+
+
+class TestIsSessionUnexpired(UnitTestCase):
+    @parameterized.expand(
+        [
+            ("none_expiry_is_unexpired", None, True),
+            ("future_expiry_is_unexpired", (timezone.now() + timedelta(days=1)).isoformat(), True),
+            ("past_expiry_is_expired", (timezone.now() - timedelta(days=1)).isoformat(), False),
+            ("malformed_expiry_is_expired", "garbage", False),
+        ]
+    )
+    def test_is_session_unexpired(self, _name: str, expiry: str | None, expected: bool):
+        assert is_session_unexpired(expiry, timezone.now()) == expected
