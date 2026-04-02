@@ -9233,6 +9233,9 @@
                 "showTotalRow": {
                     "type": "boolean"
                 },
+                "showValuesOnSeries": {
+                    "type": "boolean"
+                },
                 "showXAxisBorder": {
                     "type": "boolean"
                 },
