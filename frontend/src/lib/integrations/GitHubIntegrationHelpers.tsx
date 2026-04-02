@@ -6,6 +6,7 @@ import { LemonInputSelect, LemonInputSelectOption } from '@posthog/lemon-ui'
 import { LemonField } from 'lib/lemon-ui/LemonField'
 
 import { githubIntegrationLogic } from './githubIntegrationLogic'
+import { normalizeGitHubRepositoryValue } from './githubUtils'
 
 export type GitHubRepositoryPickerProps = {
     integrationId: number
@@ -23,7 +24,7 @@ export const GitHubRepositoryPicker = ({
     return (
         <LemonInputSelect
             onChange={(val) => onChange?.(val[0] ?? null)}
-            value={value ? [value] : []}
+            value={value ? [normalizeGitHubRepositoryValue(value) ?? value] : []}
             mode="single"
             data-attr="select-github-repository"
             placeholder="Select a repository..."

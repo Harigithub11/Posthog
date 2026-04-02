@@ -2311,9 +2311,10 @@ class GitHubIntegration:
 
         org = self.organization()
         access_token = self.integration.sensitive_config["access_token"]
+        repository_path = repository if "/" in repository else f"{org}/{repository}"
 
         response = requests.post(
-            f"https://api.github.com/repos/{org}/{repository}/issues",
+            f"https://api.github.com/repos/{repository_path}/issues",
             json={"title": title, "body": body},
             headers={
                 "Accept": "application/vnd.github+json",
