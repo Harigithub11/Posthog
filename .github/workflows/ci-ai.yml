@@ -135,7 +135,7 @@ jobs:
                   AZURE_INFERENCE_ENDPOINT: ${{ secrets.AZURE_INFERENCE_ENDPOINT }}
 
             - name: Upload eval results
-              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
               if: always()
               with:
                   name: eval-results-${{ matrix.group }}
@@ -188,7 +188,7 @@ jobs:
                       script({ github, context, fs })
 
             - name: Upload merged test results
-              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+              uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
               if: always()
               with:
                   name: junit-results-ai-evals
